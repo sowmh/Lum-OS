@@ -11,7 +11,7 @@
 
 ---
 
-## 🚀 Instalación
+## Instalación
 
 Clona el repositorio y sigue las instrucciones cuando estén disponibles:
 
