@@ -13,12 +13,12 @@
 
 ## Features
 
-- Ultralight: Designed for low-resource hardware  
-- Gaming: Optimized support for games and emulators  
-- Development: Built-in programming tools  
-- Multimedia: Efficient audio and video playback  
-- High Performance: Kernel optimized for maximum efficiency  
-- Customizable: Modular and configurable interface  
+- **Ultralight**: Designed for low-resource hardware  
+- **Gaming**: Optimized support for games and emulators  
+- **Development**: Built-in programming tools  
+- **Multimedia**: Efficient audio and video playback  
+- **High Performance**: Kernel optimized for maximum efficiency  
+- **Customizable**: Modular and configurable interface  
 
 ---
 
@@ -43,83 +43,71 @@ cd Lum-OS
 
 # Note: Build instructions will be available
 # once the basic development phase is implemented
-From ISO
-ISO images will be available in the Releases section once the project reaches a later stage.
+```
 
-Documentation
-User Guide
+### From ISO
 
-Developer Guide
+ISO images will be available in the [Releases](https://github.com/sowmh/Lum-OS/releases) section once the project reaches a later stage.
 
-System Architecture
+## Documentation
 
-Contributing
+- [User Guide](docs/user-guide.md)
+- [Developer Guide](docs/developer-guide.md)  
+- [System Architecture](docs/system-architecture.md)
+
+## Contributing
+
 Contributions are welcome. To contribute:
 
-Fork the project
+1. Fork the project
+2. Create a feature branch (`git checkout -b feature/new-feature`)
+3. Commit your changes (`git commit -am 'Add new feature'`)
+4. Push to the branch (`git push origin feature/new-feature`)
+5. Open a Pull Request
 
-Create a feature branch (git checkout -b feature/new-feature)
+## Roadmap
 
-Commit your changes (git commit -am 'Add new feature')
+**Version 0.1**
+- Basic bootloader
+- Minimal kernel
+- Basic file system
+- Essential drivers
 
-Push to the branch (git push origin feature/new-feature)
+**Version 0.2**
+- Graphical interface
+- Process management
+- Networking support
+- Basic multimedia
 
-Open a Pull Request
+**Version 1.0**
+- Full stable release
+- Application suite
+- Graphical installer
+- Complete documentation
 
-Roadmap
-Version 0.1
+## Project Status
 
-Basic bootloader
-
-Minimal kernel
-
-Basic file system
-
-Essential drivers
-
-Version 0.2
-
-Graphical interface
-
-Process management
-
-Networking support
-
-Basic multimedia
-
-Version 1.0
-
-Full stable release
-
-Application suite
-
-Graphical installer
-
-Complete documentation
-
-Project Status
-WARNING: This project is in the initial conceptual phase. No functional code is implemented yet.
+**WARNING**: This project is in the initial conceptual phase. No functional code is implemented yet.
 
 The development will start with:
+- Research and architecture planning
+- Development environment setup  
+- Basic bootloader implementation
+- Initial kernel development
 
-Research and architecture planning
+## License
 
-Development environment setup
+This project is licensed under the GPL-3.0 License. See the [LICENSE](LICENSE) file for details.
 
-Basic bootloader implementation
+## Contact
 
-Initial kernel development
+- **Issues**: [GitHub Issues](https://github.com/sowmh/Lum-OS/issues)
+- **Discussions**: [GitHub Discussions](https://github.com/sowmh/Lum-OS/discussions)
+- **X (Twitter)**: [@Lum_OS_Proyect](https://twitter.com/Lum_OS_Proyect)
+- **Email**: [Lumos-Proyect@protonmail.com](mailto:Lumos-Proyect@protonmail.com)
 
-License
-This project is licensed under the GPL-3.0 License. See the LICENSE file for details.
+---
 
-Contact
-Issues: GitHub Issues
-
-Discussions: GitHub Discussions
-
-X (Twitter): @Lum_OS_Proyect
-
-Email: Lumos-Proyect@protonmail.com
-
-<div align="center"> Developed by the Lum OS community </div> ```
+<div align="center">
+  Developed by the Lum OS community
+</div>
