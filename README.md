@@ -68,7 +68,7 @@ Contributions are welcome. To contribute:
 ## Roadmap
 
 **Version 0.1**
-- Basic bootloader
+- ✅Basic bootloader
 - Minimal kernel
 - Basic file system
 - Essential drivers
@@ -85,15 +85,7 @@ Contributions are welcome. To contribute:
 - Graphical installer
 - Complete documentation
 
-## Project Status
 
-**WARNING**: This project is in the initial conceptual phase. No functional code is implemented yet.
-
-The development will start with:
-- Research and architecture planning
-- Development environment setup  
-- Basic bootloader implementation
-- Initial kernel development
 
 ## License
 
