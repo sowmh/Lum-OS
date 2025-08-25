@@ -1,105 +1,149 @@
-Developer Guide
-Overview
+# Lum OS Developer Guide
 
-Lum OS is a lightweight, open-source operating system designed for multimedia, development, and gaming on limited hardware. This guide is intended for developers who want to contribute to the project or understand the internal workings of the OS.
+## Overview
 
-Prerequisites
+Lum OS is a lightweight, open-source operating system for multimedia, development, and gaming on limited hardware. This guide helps developers contribute to the project and understand the OS internals.
 
-Familiarity with C, C++, and Assembly
+## Prerequisites
 
-Experience with Makefiles and build systems
+### Required Knowledge
 
-Basic understanding of operating system concepts: memory management, process scheduling, and file systems
+* C, C++, and Assembly language
+* Makefiles and build systems
+* Basic understanding of OS concepts:
 
-Tools installed: GCC, NASM, QEMU, GRUB, xorriso, Git
+  * Memory management
+  * Process scheduling
+  * File systems
+  * Hardware abstraction
 
+### Required Tools
 
+* GCC - Compiler
+* NASM - Assembler
+* QEMU - Emulator
+* GRUB - Bootloader
+* xorriso - ISO creation
+* Git - Version control
 
-make build: Compiles the kernel and bootloader.
+## Build System
 
-make iso: Generates a bootable ISO image.
+### Make Targets
 
-make run: Boots the ISO in QEMU.
+| Command      | Description                     |
+| ------------ | ------------------------------- |
+| `make build` | Compile kernel and bootloader   |
+| `make iso`   | Generate bootable ISO           |
+| `make run`   | Boot ISO in QEMU                |
+| `make clean` | Remove compiled objects and ISO |
 
-make clean: Removes compiled objects and ISO.
+### Compilation Flags
 
-Compilation Flags
+```makefile
+# C Compiler
+CFLAGS = -m32 -c -ffreestanding -O2 -fno-stack-protector -fno-pic
 
-CFLAGS: -m32 -c -ffreestanding -O2 -fno-stack-protector -fno-pic
+# Assembly
+ASFLAGS = -f elf32
 
-ASFLAGS: -f elf32
+# Linker
+LDFLAGS = -m elf_i386 -T targets/x86_64/linker.ld
+```
 
-LDFLAGS: -m elf_i386 -T targets/x86_64/linker.ld
+**Notes:**
 
-Directory Details
-src/impl/x86_64/boot/
+* `-m32`: Generate 32-bit code
+* `-ffreestanding`: Freestanding environment (no standard library)
+* `-O2`: Optimization level 2
+* `-fno-stack-protector`: Disable stack protection
+* `-fno-pic`: Disable position-independent code
 
-entry.asm: Boot entry point
+## Project Structure
 
-header.o, main.o: Kernel entry and startup code
+```
+lum-os/
+├── src/impl/x86_64/boot/
+│   ├── entry.asm
+│   ├── header.o
+│   ├── main.o
+│   └── kernel.c
+├── docs/
+│   ├── user-guide.md
+│   ├── developer-guide.md
+│   └── system-architecture.md
+├── iso/boot/grub/
+├── targets/x86_64/linker.ld
+└── Makefile
+```
 
-kernel.c: Minimal kernel code
+## Development Workflow
 
-docs/
+1. **Fork & Clone**
 
-Contains Markdown files documenting user guide, developer guide, and system architecture.
+```bash
+git clone https://github.com/yourusername/lum-os.git
+cd lum-os
+```
 
-iso/
+2. **Create Feature Branch**
 
-Contains the structure for generating the ISO, including /boot/ and /boot/grub/
+```bash
+git checkout -b feature/your-feature
+```
 
-Development Workflow
+3. **Develop**
 
-Fork the repository and clone locally.
+* Kernel: `src/impl/x86_64/`
+* Bootloader: `src/impl/x86_64/boot/`
+* Documentation: `docs/`
 
-Create a feature branch: git checkout -b feature/your-feature
+4. **Build & Test**
 
-Develop your feature:
-
-Kernel modifications go under src/impl/x86_64/
-
-Bootloader modifications in src/impl/x86_64/boot/
-
-Build and test locally:
-
+```bash
 make build
 make iso
 make run
+```
 
-Commit and push your changes.
+5. **Commit & Push**
 
-Open a pull request against the main repository.
+```bash
+git add .
+git commit -m "feat: add feature"
+git push origin feature/your-feature
+```
 
-Contributing Guidelines
+6. **Pull Request**
+   Open PR with a clear description of changes.
 
-Follow the existing code style.
+## Testing
 
-Include documentation for new features.
+```bash
+make clean
+make build
+make iso
+make run
+```
 
-Ensure all tests pass before submitting.
+## Contributing Guidelines
 
-Use clear commit messages.
+* Follow the existing code style
+* Comment complex logic
+* Keep functions modular and focused
+* Update documentation when necessary
+* Test all changes locally
 
-Add new hardware or driver support in separate files/modules.
+**Commit Message Format:**
 
-System Architecture Overview
+```
+type(scope): short description
+```
 
-Refer to the system-architecture.md for diagrams and detailed explanations of memory management, process scheduling, device drivers, and the kernel structure.
+Types: `feat`, `fix`, `docs`, `refactor`, `test`
 
-Troubleshooting
+## References
 
-QEMU fails to start: Ensure DISPLAY is correctly set and X server (VcXsrv or similar) is running.
-
-Bootloader fails: Check GRUB configuration and ISO directory structure.
-
-Compilation errors: Verify NASM and GCC versions are compatible.
-
-References
-
-OSDev Wiki: https://wiki.osdev.org/
-
-GRUB Manual: https://www.gnu.org/software/grub/manual/
-
-QEMU Documentation: https://www.qemu.org/docs/
-
-GCC Documentation: https://gcc.gnu.org/onlinedocs/
+* [OSDev Wiki](https://wiki.osdev.org/)
+* [GRUB Manual](https://www.gnu.org/software/grub/manual/)
+* [QEMU Documentation](https://www.qemu.org/docs/)
+* [GCC Documentation](https://gcc.gnu.org/onlinedocs/)
