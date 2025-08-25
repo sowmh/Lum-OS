@@ -13,20 +13,7 @@ Basic understanding of operating system concepts: memory management, process sch
 
 Tools installed: GCC, NASM, QEMU, GRUB, xorriso, Git
 
-Project Structure
-Lum-OS/
-├── assets/             # Project assets (logo, images)
-├── docs/               # Documentation files
-│   ├── user-guide.md
-│   ├── developer-guide.md
-│   └── system-architecture.md
-├── src/                # Source code
-│   └── impl/x86_64/boot/  # Bootloader and kernel code
-├── Makefile
-├── README.md
-└── LICENSE
-Build System
-Makefile Targets
+
 
 make build: Compiles the kernel and bootloader.
 
