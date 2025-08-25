@@ -1,0 +1,118 @@
+Developer Guide
+Overview
+
+Lum OS is a lightweight, open-source operating system designed for multimedia, development, and gaming on limited hardware. This guide is intended for developers who want to contribute to the project or understand the internal workings of the OS.
+
+Prerequisites
+
+Familiarity with C, C++, and Assembly
+
+Experience with Makefiles and build systems
+
+Basic understanding of operating system concepts: memory management, process scheduling, and file systems
+
+Tools installed: GCC, NASM, QEMU, GRUB, xorriso, Git
+
+Project Structure
+Lum-OS/
+├── assets/             # Project assets (logo, images)
+├── docs/               # Documentation files
+│   ├── user-guide.md
+│   ├── developer-guide.md
+│   └── system-architecture.md
+├── src/                # Source code
+│   └── impl/x86_64/boot/  # Bootloader and kernel code
+├── Makefile
+├── README.md
+└── LICENSE
+Build System
+Makefile Targets
+
+make build: Compiles the kernel and bootloader.
+
+make iso: Generates a bootable ISO image.
+
+make run: Boots the ISO in QEMU.
+
+make clean: Removes compiled objects and ISO.
+
+Compilation Flags
+
+CFLAGS: -m32 -c -ffreestanding -O2 -fno-stack-protector -fno-pic
+
+ASFLAGS: -f elf32
+
+LDFLAGS: -m elf_i386 -T targets/x86_64/linker.ld
+
+Directory Details
+src/impl/x86_64/boot/
+
+entry.asm: Boot entry point
+
+header.o, main.o: Kernel entry and startup code
+
+kernel.c: Minimal kernel code
+
+docs/
+
+Contains Markdown files documenting user guide, developer guide, and system architecture.
+
+iso/
+
+Contains the structure for generating the ISO, including /boot/ and /boot/grub/
+
+Development Workflow
+
+Fork the repository and clone locally.
+
+Create a feature branch: git checkout -b feature/your-feature
+
+Develop your feature:
+
+Kernel modifications go under src/impl/x86_64/
+
+Bootloader modifications in src/impl/x86_64/boot/
+
+Build and test locally:
+
+make build
+make iso
+make run
+
+Commit and push your changes.
+
+Open a pull request against the main repository.
+
+Contributing Guidelines
+
+Follow the existing code style.
+
+Include documentation for new features.
+
+Ensure all tests pass before submitting.
+
+Use clear commit messages.
+
+Add new hardware or driver support in separate files/modules.
+
+System Architecture Overview
+
+Refer to the system-architecture.md for diagrams and detailed explanations of memory management, process scheduling, device drivers, and the kernel structure.
+
+Troubleshooting
+
+QEMU fails to start: Ensure DISPLAY is correctly set and X server (VcXsrv or similar) is running.
+
+Bootloader fails: Check GRUB configuration and ISO directory structure.
+
+Compilation errors: Verify NASM and GCC versions are compatible.
+
+References
+
+OSDev Wiki: https://wiki.osdev.org/
+
+GRUB Manual: https://www.gnu.org/software/grub/manual/
+
+QEMU Documentation: https://www.qemu.org/docs/
+
+GCC Documentation: https://gcc.gnu.org/onlinedocs/

@@ -1,0 +1,18 @@
+User Guide
+Introduction
+
+Lum OS is a lightweight operating system designed for low-resource computers, focusing on gaming, development, and multimedia.
+
+Installation
+
+From Source: Build using the provided Makefile and toolchain (instructions in README).
+
+From ISO: Once available, boot from the ISO using a USB or virtual machine.
+
+Basic Usage
+
+Boot Lum OS through GRUB.
+
+Minimal kernel currently under development.
+
+Documentation will expand as features are added.
