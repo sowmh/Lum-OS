@@ -1,5 +1,5 @@
 OUTPUT_FORMAT(elf32-i386)
-ENTRY(start)
+ENTRY(_start)
 
 SECTIONS
 {
@@ -17,7 +17,13 @@ SECTIONS
         *(.data)
     }
 
-    .bss (NOLOAD) : {
+    .stack : {
+        stack_start = .;
+        stack_space = . + 4096;
+        . = stack_space;
+    }
+
+    .bss : {
         *(.bss COMMON)
     }
 }

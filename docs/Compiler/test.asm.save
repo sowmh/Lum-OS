@@ -1,3 +1,0 @@
-global_start
-_start:
-     return(0)
