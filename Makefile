@@ -1,37 +1,34 @@
-TARGET = kernel.elf
-ISO = lumos.iso
-OBJS = src/impl/x86_64/boot/header.o \
-       src/impl/x86_64/boot/main.o \
-       src/impl/x86_64/boot/entry.o \
-       src/impl/x86_64/boot/kernel.o
+ASM=nasm
 
-CC = gcc
-AS = nasm
-LD = ld
+SRC_DIR=src
+BUILD_DIR=build
 
-CFLAGS = -m32 -c -ffreestanding -O2 -fno-stack-protector -fno-pic
-ASFLAGS = -f elf32
-LDFLAGS = -m elf_i386 -T targets/x86_64/linker.ld
+.PHONY: all floppy_image kernel bootloader clean always
 
-all: $(TARGET)
+floppy_image: $(BUILD_DIR)/main_floppy.img
 
-src/impl/x86_64/boot/%.o: src/impl/x86_64/boot/%.asm
-	$(AS) $(ASFLAGS) $< -o $@
+$(BUILD_DIR)/main_floppy.img: bootloader kernel
+	dd if=/dev/zero of=$(BUILD_DIR)/main_floppy.img bs=512 count=2880
+	mkfs.fat -F 12 -n "NBOS" $(BUILD_DIR)/main_floppy.img
+	dd if=$(BUILD_DIR)/bootloader.bin of=$(BUILD_DIR)/main_floppy.img conv=notrunc
+	mcopy -i $(BUILD_DIR)/main_floppy.img $(BUILD_DIR)/kernel.bin "::kernel.bin"
 
-src/impl/x86_64/boot/%.o: src/impl/x86_64/boot/%.c
-	$(CC) $(CFLAGS) $< -o $@
 
-$(TARGET): $(OBJS)
-	$(LD) $(LDFLAGS) -o $(TARGET) $(OBJS)
+bootloader: $(BUILD_DIR)/bootloader.bin
 
-iso: $(TARGET)
-	mkdir -p iso/boot/grub
-	cp $(TARGET) iso/boot/
-	cp targets/x86_64/iso/boot/grub/grub.cfg iso/boot/grub/
-	grub-mkrescue -o $(ISO) iso
+$(BUILD_DIR)/bootloader.bin: always
+	$(ASM) $(SRC_DIR)/bootloader/boot.asm -f bin -o $(BUILD_DIR)/bootloader.bin
 
-run: iso
-	qemu-system-i386 -cdrom $(ISO)
+
+kernel: $(BUILD_DIR)/kernel.bin
+
+$(BUILD_DIR)/kernel.bin: always
+	$(ASM) $(SRC_DIR)/kernel/main.asm -f bin -o $(BUILD_DIR)/kernel.bin
+
+
+always:
+	mkdir -p $(BUILD_DIR)
+
 
 clean:
-	rm -rf $(OBJS) $(TARGET) $(ISO) iso
+	rm -rf $(BUILD_DIR)/*
