@@ -8,33 +8,39 @@
 [![Language](https://img.shields.io/badge/language-C%2FAssembly-orange.svg)]()
 [![Status](https://img.shields.io/badge/status-In%20Development-yellow.svg)]()
 
-**Lum-OS** is a lightweight, from-scratch operating system built in C and Assembly, designed for low-resource PCs.  
-It includes a custom bootloader, kernel, drivers, and will support its own file system.
+**Lum-OS** is a lightweight, from-scratch operating system built in C and Assembly, designed for low-resource PCs.
+It includes a custom bootloader, kernel, drivers, and has now **started implementing its own FAT file system**.
 
 ## Features
 
 ### Implemented
-- Custom bootloader
-- Disk I/O operations (basic disk reading)
+
+* Custom bootloader
+* Disk I/O operations (basic disk reading)
+* Started FAT file system implementation
 
 ### In Development
-- FAT file system
+
+* Full FAT file system (read/write support)
 
 ### Planned
-- Memory management
-- Preemptive multitasking
-- Command-line shell
-- Lightweight GUI
+
+* Memory management
+* Preemptive multitasking
+* Command-line shell
+* Lightweight GUI
 
 ## Build & Run
 
 ### Prerequisites
-- GCC cross-compiler toolchain
-- NASM assembler
-- QEMU emulator
-- Make
+
+* GCC cross-compiler toolchain
+* NASM assembler
+* QEMU emulator (or Bochs)
+* Make
 
 ### Build
+
 ```bash
 git clone https://github.com/sowmh/Lum-OS.git
 cd Lum-OS
@@ -43,10 +49,12 @@ make run
 ```
 
 ## Roadmap
-- Complete FAT file system
-- Implement memory management
-- Add multitasking and shell
-- Develop basic GUI
+
+* Finish FAT file system implementation
+* Implement memory management
+* Add multitasking and shell
+* Develop basic GUI
 
 ## License
+
 This project is licensed under the MIT License.
