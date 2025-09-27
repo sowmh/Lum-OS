@@ -321,3 +321,25 @@
 00000688984i[PLUGIN] reset of 'iodebug' plugin device by virtual method
 00000688984i[PLUGIN] reset of 'gameport' plugin device by virtual method
 00000688984i[PLUGIN] reset of 'usb_uhci' plugin device by virtual method
+00000688985p[TERM  ] >>PANIC<< Received SIGHUP: quit simulation
+00000688985i[CPU0  ] CPU is in real mode (active)
+00000688985i[CPU0  ] CS.mode = 16 bit
+00000688985i[CPU0  ] SS.mode = 16 bit
+00000688985i[CPU0  ] EFER   = 0x00000000
+00000688985i[CPU0  ] | EAX=00000000  EBX=00000000  ECX=00000000  EDX=00000000
+00000688985i[CPU0  ] | ESP=00000000  EBP=00000000  ESI=00000000  EDI=00000000
+00000688985i[CPU0  ] | IOPL=0 id vip vif ac vm rf nt of df if tf sf zf af pf cf
+00000688985i[CPU0  ] | SEG sltr(index|ti|rpl)     base    limit G D
+00000688985i[CPU0  ] |  CS:f000( 1e00| 0|  0) ffff0000 0000ffff 0 0
+00000688985i[CPU0  ] |  DS:0000( 0000| 0|  0) 00000000 0000ffff 0 0
+00000688985i[CPU0  ] |  SS:0000( 0000| 0|  0) 00000000 0000ffff 0 0
+00000688985i[CPU0  ] |  ES:0000( 0000| 0|  0) 00000000 0000ffff 0 0
+00000688985i[CPU0  ] |  FS:0000( 0000| 0|  0) 00000000 0000ffff 0 0
+00000688985i[CPU0  ] |  GS:0000( 0000| 0|  0) 00000000 0000ffff 0 0
+00000688985i[CPU0  ] | EIP=0000fff0 (0000fff0)
+00000688985i[CPU0  ] | CR0=0x60000010 CR2=0x00000000
+00000688985i[CPU0  ] | CR3=0x00000000 CR4=0x00000000
+00000688985i[CMOS  ] Last time is 1758474063 (Sun Sep 21 19:01:03 2025)
+00000688985i[SIM   ] quit_sim called with exit code 1
+:57 2025)
+00000688985i[SIM   ] quit_sim called with exit code 1
