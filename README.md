@@ -9,19 +9,21 @@
 [![Status](https://img.shields.io/badge/status-In%20Development-yellow.svg)]()
 
 **Lum-OS** is a lightweight, from-scratch operating system built in C and Assembly, designed for low-resource PCs.
-It includes a custom bootloader, kernel, drivers, and has now **started implementing its own FAT file system**.
+It includes a custom bootloader, kernel, drivers, and now has **a basic FAT file system implemented**.
 
 ## Features
 
 ### Implemented
 
-* Custom bootloader
-* Disk I/O operations (basic disk reading)
-* Started FAT file system implementation
+* Custom bootloader (stage1 & stage2)
+* Kernel (basic setup and booting)
+* Disk I/O operations (read/write support)
+* Basic FAT file system support
 
 ### In Development
 
-* Full FAT file system (read/write support)
+* Full FAT file system (extended features)
+* Tools for disk management
 
 ### Planned
 
@@ -45,8 +47,18 @@ It includes a custom bootloader, kernel, drivers, and has now **started implemen
 git clone https://github.com/sowmh/Lum-OS.git
 cd Lum-OS
 make all
-make run
 ```
+
+### Run in QEMU
+
+```bash
+qemu-system-i386 -fda build/main_floppy.img -nographic
+```
+
+## Notes
+
+* Ensure `test.txt` exists if the build Makefile includes it in the floppy image.
+* Use `make clean` to remove build artifacts.
 
 ## Roadmap
 
@@ -58,3 +70,4 @@ make run
 ## License
 
 This project is licensed under the MIT License.
+
