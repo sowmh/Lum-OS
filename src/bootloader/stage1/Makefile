@@ -1,14 +1,19 @@
+
 BUILD_DIR ?= build
-ASM ?= nasm
-SRC ?= boot.asm
+ASM       ?= nasm
+SRC       ?= boot.asm
+TARGET    = $(BUILD_DIR)/stage1.bin
 
 .PHONY: all clean
 
-all: $(BUILD_DIR)/stage1.bin
 
-$(BUILD_DIR)/stage1.bin: $(SRC)
-	mkdir -p $(BUILD_DIR)
-	$(ASM) $< -f bin -o $@
+all: $(TARGET)
+
+$(TARGET): $(SRC)
+	@mkdir -p $(BUILD_DIR)
+	@echo "Assembling $< -> $@"
+	$(ASM) -f bin $< -o $@
 
 clean:
-	rm -f $(BUILD_DIR)/stage1.bin
+	@echo "Cleaning..."
+	@rm -f $(TARGET)
