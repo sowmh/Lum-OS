@@ -1,15 +1,20 @@
+; src/bootloader/stage2/gdt.asm
 bits 16
 
-section _TEXT class=CODE
+section .text class=CODE
 
 global _gdt_load
+
+; void _cdecl gdt_load(const GDTDescriptor* desc)
 _gdt_load:
     push bp
     mov bp, sp
-
-    mov eax, [bp + 4]   ; Puntero a la GDT Descriptor
-    lgdt [eax]          ; Carga la GDT
-
-    mov sp, bp
+    
+    ; Get pointer to GDT descriptor
+    mov bx, [bp + 4]    ; Offset of descriptor struct
+    
+    ; Load GDT
+    lgdt [bx]
+    
     pop bp
     ret
