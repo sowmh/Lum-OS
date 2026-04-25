@@ -1,1 +1,2 @@
-qemu-system-i386 -fda build/main_floppy.img
+#!/usr/bin/env sh
+exec python3 tools/build.py run

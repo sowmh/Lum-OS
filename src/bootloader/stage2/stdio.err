@@ -1,3 +1,0 @@
-x86.h(2): Error! E1055: Unable to open 'stdint.h'
-x86.h(4): Error! E1127: Type required in parameter list
-x86.h(4): Error! E1022: Missing or misspelled data type near 'uint8_t'

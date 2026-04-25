@@ -1,149 +1,74 @@
-# Lum OS Developer Guide
+# Lum-OS Developer Guide
 
-## Overview
+## Active build path
 
-Lum OS is a lightweight, open-source operating system for multimedia, development, and gaming on limited hardware. This guide helps developers contribute to the project and understand the OS internals.
+The supported build path is the NASM-based one driven by `tools/build.py`.
 
-## Prerequisites
+Requirements:
 
-### Required Knowledge
+- Python 3
+- NASM
+- QEMU
 
-* C, C++, and Assembly language
-* Makefiles and build systems
-* Basic understanding of OS concepts:
-
-  * Memory management
-  * Process scheduling
-  * File systems
-  * Hardware abstraction
-
-### Required Tools
-
-* GCC - Compiler
-* NASM - Assembler
-* QEMU - Emulator
-* GRUB - Bootloader
-* xorriso - ISO creation
-* Git - Version control
-
-## Build System
-
-### Make Targets
-
-| Command      | Description                     |
-| ------------ | ------------------------------- |
-| `make build` | Compile kernel and bootloader   |
-| `make iso`   | Generate bootable ISO           |
-| `make run`   | Boot ISO in QEMU                |
-| `make clean` | Remove compiled objects and ISO |
-
-### Compilation Flags
-
-```makefile
-# C Compiler
-CFLAGS = -m32 -c -ffreestanding -O2 -fno-stack-protector -fno-pic
-
-# Assembly
-ASFLAGS = -f elf32
-
-# Linker
-LDFLAGS = -m elf_i386 -T targets/x86_64/linker.ld
-```
-
-**Notes:**
-
-* `-m32`: Generate 32-bit code
-* `-ffreestanding`: Freestanding environment (no standard library)
-* `-O2`: Optimization level 2
-* `-fno-stack-protector`: Disable stack protection
-* `-fno-pic`: Disable position-independent code
-
-## Project Structure
-
-```
-lum-os/
-├── src/impl/x86_64/boot/
-│   ├── entry.asm
-│   ├── header.o
-│   ├── main.o
-│   └── kernel.c
-├── docs/
-│   ├── user-guide.md
-│   ├── developer-guide.md
-│   └── system-architecture.md
-├── iso/boot/grub/
-├── targets/x86_64/linker.ld
-└── Makefile
-```
-
-## Development Workflow
-
-1. **Fork & Clone**
+Build targets:
 
 ```bash
-git clone https://github.com/yourusername/lum-os.git
-cd lum-os
+python tools/build.py stage1
+python tools/build.py stage2
+python tools/build.py kernel
+python tools/build.py image
+python tools/build.py run
+python tools/build.py run-headless
+python tools/build.py clean
 ```
 
-2. **Create Feature Branch**
+The top-level `Makefile` is only a wrapper around these commands.
 
-```bash
-git checkout -b feature/your-feature
-```
+## Source map
 
-3. **Develop**
+- `src/bootloader/stage1/boot.asm`
+  - FAT12-aware boot sector
+  - loads `STAGE2.BIN`
+- `src/bootloader/stage2/stage2.asm`
+  - serial console setup
+  - kernel loading from FAT12
+  - boot info handoff at `0x9000`
+  - A20 enable and protected-mode jump
+- `src/kernel/kernel.asm`
+  - VGA + serial console
+  - line input from serial and keyboard polling
+  - command shell
+- `tools/build_image.py`
+  - assembles a FAT12 floppy image in pure Python
 
-* Kernel: `src/impl/x86_64/`
-* Bootloader: `src/impl/x86_64/boot/`
-* Documentation: `docs/`
+## Notes on legacy files
 
-4. **Build & Test**
+There are older C and Open Watcom experiments still present under `src/bootloader/stage2/` and `src/kernel/`.
 
-```bash
-make build
-make iso
-make run
-```
-
-5. **Commit & Push**
-
-```bash
-git add .
-git commit -m "feat: add feature"
-git push origin feature/your-feature
-```
-
-6. **Pull Request**
-   Open PR with a clear description of changes.
+They are not part of the current verified boot path.
 
 ## Testing
 
+Use headless mode for the quickest verification:
+
 ```bash
-make clean
-make build
-make iso
-make run
+python tools/build.py run-headless
 ```
 
-## Contributing Guidelines
+You should see:
 
-* Follow the existing code style
-* Comment complex logic
-* Keep functions modular and focused
-* Update documentation when necessary
-* Test all changes locally
+- stage 2 serial messages
+- the kernel banner
+- the `lum>` prompt
 
-**Commit Message Format:**
+You can also pipe commands into QEMU for smoke tests:
 
-```
-type(scope): short description
+```bash
+printf "help\nmem\nhalt\n" | qemu-system-i386 -drive file=build/main_floppy.img,format=raw,if=floppy -serial stdio -display none -no-reboot -no-shutdown
 ```
 
-Types: `feat`, `fix`, `docs`, `refactor`, `test`
+## Extension points
 
-## References
-
-* [OSDev Wiki](https://wiki.osdev.org/)
-* [GRUB Manual](https://www.gnu.org/software/grub/manual/)
-* [QEMU Documentation](https://www.qemu.org/docs/)
-* [GCC Documentation](https://gcc.gnu.org/onlinedocs/)
+- Add new shell commands in `src/kernel/kernel.asm`
+- Extend the boot info structure at `0x9000`
+- Replace polling with proper interrupt-driven input once an IDT exists
