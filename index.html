@@ -1,0 +1,856 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Grammar Racing: El reto de las subordinadas</title>
+    <script src="https://cdn.jsdelivr.net/npm/canvas-confetti@1.6.0/dist/confetti.browser.min.js"></script>
+    <style>
+        :root {
+            color-scheme: light;
+            --bg: #f5efe6;
+            --bg-accent: radial-gradient(circle at top, rgba(224, 122, 95, 0.18), transparent 40%), linear-gradient(180deg, #fffaf3 0%, #f5efe6 100%);
+            --surface: rgba(255, 255, 255, 0.86);
+            --surface-strong: #fffdf8;
+            --text: #1f2933;
+            --muted: #52606d;
+            --primary: #d94841;
+            --primary-strong: #b42318;
+            --secondary: #f4a261;
+            --success: #228b5a;
+            --danger: #c0392b;
+            --border: rgba(31, 41, 51, 0.08);
+            --shadow: 0 20px 50px rgba(97, 58, 23, 0.12);
+            --track: #eadcca;
+            --font-display: "Trebuchet MS", "Avenir Next", sans-serif;
+            --font-body: "Segoe UI", system-ui, sans-serif;
+        }
+
+        [data-theme="dark"] {
+            color-scheme: dark;
+            --bg: #111827;
+            --bg-accent: radial-gradient(circle at top, rgba(244, 162, 97, 0.16), transparent 35%), linear-gradient(180deg, #111827 0%, #0b1220 100%);
+            --surface: rgba(17, 24, 39, 0.84);
+            --surface-strong: #172033;
+            --text: #eef2f7;
+            --muted: #b8c4d6;
+            --primary: #ff7a59;
+            --primary-strong: #ff5a36;
+            --secondary: #ffb36b;
+            --success: #38c172;
+            --danger: #ff6b6b;
+            --border: rgba(255, 255, 255, 0.08);
+            --shadow: 0 24px 60px rgba(0, 0, 0, 0.34);
+            --track: #233046;
+        }
+
+        * {
+            box-sizing: border-box;
+        }
+
+        html {
+            scroll-behavior: smooth;
+        }
+
+        body {
+            margin: 0;
+            min-height: 100vh;
+            font-family: var(--font-body);
+            background: var(--bg-accent);
+            color: var(--text);
+        }
+
+        button,
+        input,
+        select,
+        textarea {
+            font: inherit;
+        }
+
+        .page-shell {
+            width: min(1120px, calc(100% - 32px));
+            margin: 0 auto;
+            padding: 24px 0 48px;
+        }
+
+        .topbar {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            gap: 16px;
+            margin-bottom: 18px;
+        }
+
+        .eyebrow {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            padding: 10px 16px;
+            border-radius: 999px;
+            background: var(--surface);
+            border: 1px solid var(--border);
+            box-shadow: var(--shadow);
+            backdrop-filter: blur(14px);
+            color: var(--muted);
+            font-size: 0.95rem;
+        }
+
+        .theme-toggle {
+            border: 1px solid var(--border);
+            background: var(--surface);
+            color: var(--text);
+            border-radius: 999px;
+            padding: 12px 16px;
+            cursor: pointer;
+            box-shadow: var(--shadow);
+            backdrop-filter: blur(14px);
+        }
+
+        .theme-toggle:hover,
+        .theme-toggle:focus-visible,
+        .primary-btn:hover,
+        .primary-btn:focus-visible,
+        .option-btn:hover,
+        .option-btn:focus-visible {
+            transform: translateY(-1px);
+        }
+
+        .hero {
+            display: grid;
+            grid-template-columns: 1.2fr 0.8fr;
+            gap: 22px;
+            margin-bottom: 24px;
+        }
+
+        .hero-panel,
+        .status-panel,
+        .level-card,
+        .final-card {
+            background: var(--surface);
+            border: 1px solid var(--border);
+            box-shadow: var(--shadow);
+            backdrop-filter: blur(16px);
+        }
+
+        .hero-panel {
+            position: relative;
+            overflow: hidden;
+            border-radius: 28px;
+            padding: 32px;
+        }
+
+        .hero-panel::after {
+            content: "";
+            position: absolute;
+            inset: auto -60px -60px auto;
+            width: 220px;
+            height: 220px;
+            background: radial-gradient(circle, rgba(244, 162, 97, 0.28), transparent 70%);
+            pointer-events: none;
+        }
+
+        .hero h1 {
+            margin: 0 0 12px;
+            font-family: var(--font-display);
+            font-size: clamp(2rem, 4vw, 3.6rem);
+            line-height: 0.95;
+            letter-spacing: -0.04em;
+        }
+
+        .hero p {
+            margin: 0;
+            max-width: 38rem;
+            color: var(--muted);
+            font-size: 1.05rem;
+        }
+
+        .hero-stats {
+            display: grid;
+            gap: 14px;
+            align-content: start;
+        }
+
+        .status-panel {
+            border-radius: 24px;
+            padding: 22px;
+        }
+
+        .status-head {
+            display: flex;
+            justify-content: space-between;
+            gap: 16px;
+            align-items: baseline;
+            margin-bottom: 14px;
+        }
+
+        .status-head strong,
+        .status-head span {
+            display: block;
+        }
+
+        .status-label {
+            color: var(--muted);
+            font-size: 0.9rem;
+        }
+
+        .status-value {
+            font-size: 1.1rem;
+            font-weight: 700;
+        }
+
+        .progress-rail {
+            height: 14px;
+            border-radius: 999px;
+            background: var(--track);
+            overflow: hidden;
+            margin-bottom: 12px;
+        }
+
+        .progress-fill {
+            width: 0%;
+            height: 100%;
+            border-radius: inherit;
+            background: linear-gradient(90deg, var(--secondary), var(--primary));
+            transition: width 0.45s ease;
+        }
+
+        .status-copy {
+            color: var(--muted);
+            margin: 0;
+        }
+
+        .board {
+            display: grid;
+            gap: 18px;
+        }
+
+        .level-card,
+        .final-card {
+            display: none;
+            border-radius: 28px;
+            padding: 28px;
+            animation: card-in 0.45s ease;
+        }
+
+        .level-card.active,
+        .final-card.active {
+            display: block;
+        }
+
+        @keyframes card-in {
+            from {
+                opacity: 0;
+                transform: translateY(18px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        .level-tag {
+            display: inline-flex;
+            padding: 8px 12px;
+            border-radius: 999px;
+            background: rgba(217, 72, 65, 0.1);
+            color: var(--primary-strong);
+            font-weight: 700;
+            letter-spacing: 0.02em;
+            margin-bottom: 14px;
+        }
+
+        .level-card h2,
+        .final-card h2 {
+            margin: 0 0 8px;
+            font-size: clamp(1.5rem, 3vw, 2.2rem);
+            line-height: 1.08;
+        }
+
+        .level-intro,
+        .quiz-help,
+        .feedback {
+            color: var(--muted);
+        }
+
+        .race-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 18px;
+            margin-top: 22px;
+        }
+
+        .lab-box,
+        .quiz-box {
+            background: var(--surface-strong);
+            border: 1px solid var(--border);
+            border-radius: 22px;
+            padding: 20px;
+        }
+
+        .section-title {
+            margin: 0 0 12px;
+            font-size: 1rem;
+            text-transform: uppercase;
+            letter-spacing: 0.08em;
+            color: var(--muted);
+        }
+
+        .phrase-display {
+            margin: 0 0 16px;
+            font-size: 1.35rem;
+            line-height: 1.45;
+            font-weight: 700;
+        }
+
+        .sub-part {
+            color: var(--primary);
+            text-decoration: underline;
+            text-decoration-thickness: 2px;
+            text-underline-offset: 3px;
+        }
+
+        .tip-box {
+            margin: 16px 0 0;
+            padding: 14px 16px;
+            border-radius: 16px;
+            background: rgba(244, 162, 97, 0.12);
+            color: var(--text);
+        }
+
+        .primary-btn,
+        .option-btn {
+            border: none;
+            border-radius: 16px;
+            cursor: pointer;
+            transition: transform 0.2s ease, background-color 0.2s ease, border-color 0.2s ease, opacity 0.2s ease;
+        }
+
+        .primary-btn {
+            width: 100%;
+            padding: 14px 18px;
+            background: linear-gradient(135deg, var(--primary), var(--primary-strong));
+            color: #fff;
+            font-weight: 700;
+            margin-top: 16px;
+        }
+
+        .primary-btn[disabled] {
+            opacity: 0.65;
+            cursor: not-allowed;
+            transform: none;
+        }
+
+        .options {
+            display: grid;
+            gap: 10px;
+            margin-top: 16px;
+        }
+
+        .option-btn {
+            width: 100%;
+            text-align: left;
+            padding: 14px 16px;
+            background: transparent;
+            color: var(--text);
+            border: 1px solid var(--border);
+        }
+
+        .option-btn.correct {
+            background: rgba(34, 139, 90, 0.14);
+            border-color: rgba(34, 139, 90, 0.45);
+            color: var(--text);
+        }
+
+        .option-btn.wrong {
+            background: rgba(192, 57, 43, 0.14);
+            border-color: rgba(192, 57, 43, 0.45);
+            color: var(--text);
+        }
+
+        .option-btn[disabled] {
+            cursor: not-allowed;
+        }
+
+        .feedback {
+            min-height: 24px;
+            margin: 14px 0 0;
+            font-weight: 600;
+        }
+
+        .feedback.ok {
+            color: var(--success);
+        }
+
+        .feedback.fail {
+            color: var(--danger);
+        }
+
+        .shake {
+            animation: shake 0.35s ease-in-out;
+        }
+
+        @keyframes shake {
+            0%, 100% {
+                transform: translateX(0);
+            }
+            25% {
+                transform: translateX(-7px);
+            }
+            75% {
+                transform: translateX(7px);
+            }
+        }
+
+        .final-card {
+            text-align: center;
+        }
+
+        .final-trophy {
+            font-size: 4rem;
+            margin: 0 0 8px;
+        }
+
+        .results {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 12px;
+            margin: 24px 0;
+        }
+
+        .result-box {
+            border-radius: 18px;
+            padding: 16px;
+            background: var(--surface-strong);
+            border: 1px solid var(--border);
+        }
+
+        .result-box strong {
+            display: block;
+            font-size: 1.5rem;
+            margin-top: 6px;
+        }
+
+        .sr-only {
+            position: absolute;
+            width: 1px;
+            height: 1px;
+            padding: 0;
+            margin: -1px;
+            overflow: hidden;
+            clip: rect(0, 0, 0, 0);
+            white-space: nowrap;
+            border: 0;
+        }
+
+        @media (max-width: 860px) {
+            .hero,
+            .race-grid {
+                grid-template-columns: 1fr;
+            }
+
+            .results {
+                grid-template-columns: 1fr;
+            }
+        }
+
+        @media (prefers-reduced-motion: reduce) {
+            *,
+            *::before,
+            *::after {
+                animation: none !important;
+                transition: none !important;
+                scroll-behavior: auto !important;
+            }
+        }
+    </style>
+</head>
+<body>
+    <main class="page-shell">
+        <div class="topbar">
+            <div class="eyebrow">Modo arcade de sintaxis</div>
+            <button id="theme-toggle" class="theme-toggle" type="button" aria-pressed="false">
+                Cambiar tema
+            </button>
+        </div>
+
+        <section class="hero" aria-label="Presentacion del juego">
+            <article class="hero-panel">
+                <p class="level-tag">Grammar Racing</p>
+                <h1>Domina las subordinadas sin empanarte a mitad de carrera.</h1>
+                <p>
+                    Tres pruebas, tres trucos clave y feedback inmediato para distinguir
+                    sustantivas, adjetivas y adverbiales con mucha menos teoria pesada.
+                </p>
+            </article>
+
+            <aside class="hero-stats">
+                <section class="status-panel" aria-label="Panel de progreso">
+                    <div class="status-head">
+                        <div>
+                            <span class="status-label">Nivel actual</span>
+                            <strong id="level-name" class="status-value">1. Sustantivas</strong>
+                        </div>
+                        <div>
+                            <span class="status-label">Puntos</span>
+                            <strong id="score-val" class="status-value">0 / 100</strong>
+                        </div>
+                    </div>
+
+                    <div class="progress-rail" aria-hidden="true">
+                        <div id="energy-fill" class="progress-fill"></div>
+                    </div>
+                    <p id="status-copy" class="status-copy">Empieza por el truco de sustituir por "eso".</p>
+                </section>
+            </aside>
+        </section>
+
+        <section class="board" aria-live="polite">
+            <article id="level1" class="level-card active" data-level-name="Sustantivas">
+                <p class="level-tag">Nivel 1</p>
+                <h2>El remolque de "eso"</h2>
+                <p class="level-intro">
+                    Las subordinadas sustantivas funcionan como una cosa: sujeto, complemento directo o termino de una preposicion.
+                </p>
+
+                <div class="race-grid">
+                    <section class="lab-box" aria-labelledby="lab1-title">
+                        <h3 id="lab1-title" class="section-title">Laboratorio</h3>
+                        <p class="phrase-display" id="lab1-text">
+                            Me molesta <span class="sub-part">que llegues tarde</span>.
+                        </p>
+                        <p class="tip-box">Si puedes cambiar la subordinada por "eso", casi seguro que vas bien.</p>
+                        <button class="primary-btn lab-btn" type="button" data-level="1" data-replacement="eso">
+                            Probar sustitucion
+                        </button>
+                    </section>
+
+                    <section class="quiz-box" aria-labelledby="quiz1-title">
+                        <h3 id="quiz1-title" class="section-title">Reto rapido</h3>
+                        <p class="quiz-help">¿Cual de estas opciones es una subordinada sustantiva?</p>
+                        <div class="options" role="group" aria-label="Pregunta del nivel 1">
+                            <button class="option-btn" type="button" data-level="1" data-correct="false">
+                                A. El coche que vuela es mio.
+                            </button>
+                            <button class="option-btn" type="button" data-level="1" data-correct="true">
+                                B. Me molesta que llegues tarde.
+                            </button>
+                            <button class="option-btn" type="button" data-level="1" data-correct="false">
+                                C. Fui donde me dijiste.
+                            </button>
+                        </div>
+                        <p id="feedback1" class="feedback" aria-live="polite"></p>
+                    </section>
+                </div>
+            </article>
+
+            <article id="level2" class="level-card" data-level-name="Adjetivas">
+                <p class="level-tag">Nivel 2</p>
+                <h2>El remolque descriptivo</h2>
+                <p class="level-intro">
+                    Las subordinadas adjetivas acompañan a un sustantivo y dicen cual es o como es.
+                </p>
+
+                <div class="race-grid">
+                    <section class="lab-box" aria-labelledby="lab2-title">
+                        <h3 id="lab2-title" class="section-title">Laboratorio</h3>
+                        <p class="phrase-display" id="lab2-text">
+                            La serie <span class="sub-part">que vimos ayer</span> era larguisima.
+                        </p>
+                        <p class="tip-box">Suelen poder reemplazarse por un adjetivo o apoyarse en un relativo: "la cual", "que", "quien".</p>
+                        <button class="primary-btn lab-btn" type="button" data-level="2" data-replacement="la cual vimos ayer">
+                            Probar sustitucion
+                        </button>
+                    </section>
+
+                    <section class="quiz-box" aria-labelledby="quiz2-title">
+                        <h3 id="quiz2-title" class="section-title">Reto rapido</h3>
+                        <p class="quiz-help">Identifica la subordinada adjetiva.</p>
+                        <div class="options" role="group" aria-label="Pregunta del nivel 2">
+                            <button class="option-btn" type="button" data-level="2" data-correct="true">
+                                A. Los alumnos que estudian aprobaran.
+                            </button>
+                            <button class="option-btn" type="button" data-level="2" data-correct="false">
+                                B. Dijo que vendria pronto.
+                            </button>
+                            <button class="option-btn" type="button" data-level="2" data-correct="false">
+                                C. Hazlo como quieras.
+                            </button>
+                        </div>
+                        <p id="feedback2" class="feedback" aria-live="polite"></p>
+                    </section>
+                </div>
+            </article>
+
+            <article id="level3" class="level-card" data-level-name="Adverbiales">
+                <p class="level-tag">Nivel 3</p>
+                <h2>El GPS gramatical</h2>
+                <p class="level-intro">
+                    Las subordinadas adverbiales aportan circunstancias: tiempo, lugar, modo, causa o finalidad.
+                </p>
+
+                <div class="race-grid">
+                    <section class="lab-box" aria-labelledby="lab3-title">
+                        <h3 id="lab3-title" class="section-title">Laboratorio</h3>
+                        <p class="phrase-display" id="lab3-text">
+                            Ire a verte <span class="sub-part">cuando salga el sol</span>.
+                        </p>
+                        <p class="tip-box">Prueba a sustituir por un adverbio o una expresion equivalente: "entonces", "alli", "asi".</p>
+                        <button class="primary-btn lab-btn" type="button" data-level="3" data-replacement="entonces">
+                            Probar sustitucion
+                        </button>
+                    </section>
+
+                    <section class="quiz-box" aria-labelledby="quiz3-title">
+                        <h3 id="quiz3-title" class="section-title">Reto rapido</h3>
+                        <p class="quiz-help">¿Cual es una subordinada adverbial de lugar?</p>
+                        <div class="options" role="group" aria-label="Pregunta del nivel 3">
+                            <button class="option-btn" type="button" data-level="3" data-correct="false">
+                                A. Se que estas ahi.
+                            </button>
+                            <button class="option-btn" type="button" data-level="3" data-correct="true">
+                                B. Esperame donde termina el asfalto.
+                            </button>
+                            <button class="option-btn" type="button" data-level="3" data-correct="false">
+                                C. El libro que lei es largo.
+                            </button>
+                        </div>
+                        <p id="feedback3" class="feedback" aria-live="polite"></p>
+                    </section>
+                </div>
+            </article>
+
+            <article id="final-screen" class="final-card" aria-labelledby="final-title">
+                <p class="final-trophy" aria-hidden="true">🏁</p>
+                <h2 id="final-title">Carrera completada</h2>
+                <p class="level-intro">
+                    Has pasado por las tres familias principales de subordinadas y ya tienes un mapa mental bastante mas claro.
+                </p>
+                <div class="results">
+                    <div class="result-box">
+                        Niveles
+                        <strong>3 / 3</strong>
+                    </div>
+                    <div class="result-box">
+                        Aciertos
+                        <strong id="final-correct">3</strong>
+                    </div>
+                    <div class="result-box">
+                        Puntuacion
+                        <strong id="final-score">100</strong>
+                    </div>
+                </div>
+                <button id="restart-btn" class="primary-btn" type="button">Reiniciar carrera</button>
+            </article>
+        </section>
+
+        <p id="sr-status" class="sr-only" aria-live="polite"></p>
+    </main>
+
+    <script>
+        const TOTAL_LEVELS = 3;
+        const state = {
+            currentLevel: 1,
+            score: 0,
+            correctAnswers: 0
+        };
+
+        const levelMessages = {
+            1: 'Empieza por el truco de sustituir por "eso".',
+            2: 'Ahora toca reconocer las que describen a un sustantivo.',
+            3: 'Ultima curva: identifica las que expresan lugar, tiempo o modo.'
+        };
+
+        const themeToggle = document.getElementById('theme-toggle');
+        const scoreEl = document.getElementById('score-val');
+        const levelNameEl = document.getElementById('level-name');
+        const progressEl = document.getElementById('energy-fill');
+        const statusCopyEl = document.getElementById('status-copy');
+        const srStatusEl = document.getElementById('sr-status');
+        const finalCard = document.getElementById('final-screen');
+
+        initializeTheme();
+        bindEvents();
+        updateProgress();
+
+        function initializeTheme() {
+            const savedTheme = localStorage.getItem('grammar-racing-theme');
+            const preferredDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+            const theme = savedTheme || (preferredDark ? 'dark' : 'light');
+            document.body.setAttribute('data-theme', theme);
+            syncThemeButton(theme);
+        }
+
+        function bindEvents() {
+            themeToggle.addEventListener('click', toggleTheme);
+            document.querySelectorAll('.lab-btn').forEach((button) => {
+                button.addEventListener('click', () => transformLab(button));
+            });
+            document.querySelectorAll('.option-btn').forEach((button) => {
+                button.addEventListener('click', () => checkAnswer(button));
+            });
+            document.getElementById('restart-btn').addEventListener('click', restartGame);
+        }
+
+        function toggleTheme() {
+            const currentTheme = document.body.getAttribute('data-theme') === 'dark' ? 'dark' : 'light';
+            const nextTheme = currentTheme === 'dark' ? 'light' : 'dark';
+            document.body.setAttribute('data-theme', nextTheme);
+            localStorage.setItem('grammar-racing-theme', nextTheme);
+            syncThemeButton(nextTheme);
+        }
+
+        function syncThemeButton(theme) {
+            const isDark = theme === 'dark';
+            themeToggle.setAttribute('aria-pressed', String(isDark));
+            themeToggle.textContent = isDark ? 'Tema claro' : 'Tema oscuro';
+        }
+
+        function transformLab(button) {
+            const level = button.dataset.level;
+            const replacement = button.dataset.replacement;
+            const phrase = document.getElementById(`lab${level}-text`);
+            const subPart = phrase.querySelector('.sub-part');
+
+            subPart.textContent = replacement;
+            subPart.style.color = 'var(--success)';
+            subPart.style.textDecoration = 'none';
+            button.disabled = true;
+            button.textContent = 'Transformado';
+            announce(`Nivel ${level}: sustitucion aplicada.`);
+        }
+
+        function checkAnswer(button) {
+            const level = Number(button.dataset.level);
+            const isCorrect = button.dataset.correct === 'true';
+            const levelCard = document.getElementById(`level${level}`);
+            const feedback = document.getElementById(`feedback${level}`);
+            const options = levelCard.querySelectorAll('.option-btn');
+
+            options.forEach((option) => {
+                option.disabled = true;
+                const optionCorrect = option.dataset.correct === 'true';
+                option.classList.toggle('correct', optionCorrect);
+            });
+
+            if (isCorrect) {
+                button.classList.add('correct');
+                feedback.textContent = 'Correcto. Pasas al siguiente nivel.';
+                feedback.className = 'feedback ok';
+                state.correctAnswers += 1;
+                state.score = Math.round((state.correctAnswers / TOTAL_LEVELS) * 100);
+                updateProgress();
+                celebrate();
+                announce(`Respuesta correcta en el nivel ${level}.`);
+                window.setTimeout(nextLevel, 1100);
+                return;
+            }
+
+            button.classList.add('wrong');
+            feedback.textContent = 'No era esa. Te marco la correcta para que la compares.';
+            feedback.className = 'feedback fail';
+            levelCard.classList.add('shake');
+            window.setTimeout(() => levelCard.classList.remove('shake'), 380);
+            announce(`Respuesta incorrecta en el nivel ${level}.`);
+        }
+
+        function updateProgress() {
+            const activeLevelCard = document.querySelector(`.level-card[data-level-name].active`);
+            const activeLevelName = activeLevelCard ? activeLevelCard.dataset.levelName : 'Final';
+            scoreEl.textContent = `${state.score} / 100`;
+            progressEl.style.width = `${state.score}%`;
+            levelNameEl.textContent = state.currentLevel <= TOTAL_LEVELS
+                ? `${state.currentLevel}. ${activeLevelName}`
+                : 'Meta alcanzada';
+            statusCopyEl.textContent = state.currentLevel <= TOTAL_LEVELS
+                ? levelMessages[state.currentLevel]
+                : 'Has completado las tres pruebas.';
+        }
+
+        function nextLevel() {
+            const currentCard = document.getElementById(`level${state.currentLevel}`);
+            if (currentCard) {
+                currentCard.classList.remove('active');
+            }
+
+            state.currentLevel += 1;
+
+            if (state.currentLevel <= TOTAL_LEVELS) {
+                const nextCard = document.getElementById(`level${state.currentLevel}`);
+                nextCard.classList.add('active');
+                updateProgress();
+                nextCard.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                return;
+            }
+
+            showFinalScreen();
+        }
+
+        function showFinalScreen() {
+            document.getElementById('final-correct').textContent = String(state.correctAnswers);
+            document.getElementById('final-score').textContent = String(state.score);
+            finalCard.classList.add('active');
+            updateProgress();
+            celebrate(true);
+            announce('Carrera completada.');
+            finalCard.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        }
+
+        function celebrate(isFinal = false) {
+            if (typeof confetti !== 'function') {
+                return;
+            }
+
+            confetti({
+                particleCount: isFinal ? 180 : 90,
+                spread: isFinal ? 140 : 70,
+                origin: { y: 0.65 }
+            });
+        }
+
+        function restartGame() {
+            state.currentLevel = 1;
+            state.score = 0;
+            state.correctAnswers = 0;
+
+            document.querySelectorAll('.level-card').forEach((card, index) => {
+                card.classList.toggle('active', index === 0);
+                card.querySelectorAll('.option-btn').forEach((button) => {
+                    button.disabled = false;
+                    button.classList.remove('correct', 'wrong');
+                });
+                const feedback = card.querySelector('.feedback');
+                if (feedback) {
+                    feedback.textContent = '';
+                    feedback.className = 'feedback';
+                }
+                const labButton = card.querySelector('.lab-btn');
+                if (labButton) {
+                    labButton.disabled = false;
+                    labButton.textContent = 'Probar sustitucion';
+                }
+            });
+
+            resetLabText(1, 'que llegues tarde');
+            resetLabText(2, 'que vimos ayer');
+            resetLabText(3, 'cuando salga el sol');
+
+            finalCard.classList.remove('active');
+            updateProgress();
+            announce('Juego reiniciado.');
+            window.scrollTo({ top: 0, behavior: 'smooth' });
+        }
+
+        function resetLabText(level, originalText) {
+            const phrase = document.getElementById(`lab${level}-text`);
+            const subPart = phrase.querySelector('.sub-part');
+            subPart.textContent = originalText;
+            subPart.style.color = 'var(--primary)';
+            subPart.style.textDecoration = 'underline';
+        }
+
+        function announce(message) {
+            srStatusEl.textContent = message;
+        }
+    </script>
+</body>
+</html>
