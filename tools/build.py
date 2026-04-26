@@ -14,6 +14,7 @@ STAGE1_SRC = REPO_ROOT / "src" / "bootloader" / "stage1" / "boot.asm"
 STAGE2_SRC = REPO_ROOT / "src" / "bootloader" / "stage2" / "stage2.asm"
 KERNEL_SRC = REPO_ROOT / "src" / "kernel" / "kernel.asm"
 IMAGE_SCRIPT = REPO_ROOT / "tools" / "build_image.py"
+SMOKE_TEST_SCRIPT = REPO_ROOT / "tools" / "smoke_test.py"
 
 
 def find_executable(env_var: str, names: list[str], fallbacks: list[Path]) -> str:
@@ -112,6 +113,11 @@ def run_qemu(headless: bool) -> None:
     run_command(command)
 
 
+def smoke_test() -> None:
+    image = build_image()
+    run_command([sys.executable, str(SMOKE_TEST_SCRIPT), "--image", str(image), "--qemu", qemu()])
+
+
 def clean() -> None:
     if BUILD_DIR.exists():
         shutil.rmtree(BUILD_DIR)
@@ -122,7 +128,7 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Build Lum-OS with local tools.")
     parser.add_argument(
         "target",
-        choices=["all", "image", "stage1", "stage2", "kernel", "run", "run-headless", "clean"],
+        choices=["all", "image", "stage1", "stage2", "kernel", "run", "run-headless", "smoke-test", "test", "clean"],
         nargs="?",
         default="all",
     )
@@ -145,6 +151,8 @@ def main() -> int:
             run_qemu(headless=False)
         elif args.target == "run-headless":
             run_qemu(headless=True)
+        elif args.target in {"smoke-test", "test"}:
+            smoke_test()
         elif args.target == "clean":
             clean()
     except FileNotFoundError as exc:

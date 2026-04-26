@@ -1,6 +1,6 @@
 PYTHON ?= python
 
-.PHONY: all image stage1 stage2 kernel run run-headless clean
+.PHONY: all image stage1 stage2 kernel run run-headless smoke-test test clean
 
 all: image
 
@@ -21,6 +21,11 @@ run:
 
 run-headless:
 	$(PYTHON) tools/build.py run-headless
+
+smoke-test:
+	$(PYTHON) tools/build.py smoke-test
+
+test: smoke-test
 
 clean:
 	$(PYTHON) tools/build.py clean

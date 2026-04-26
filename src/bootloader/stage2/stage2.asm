@@ -23,6 +23,8 @@ bits 16
 %define BOOTINFO_CONV_KB      6
 %define BOOTINFO_EXT_KB       8
 %define BOOTINFO_TOTAL_KB     10
+%define BOOTINFO_ROOTDIR_ENTRIES 14
+%define BOOTINFO_ROOTDIR_ADDR    16
 
 start:
     cli
@@ -80,7 +82,7 @@ write_boot_info:
     xor di, di
 
     mov dword [es:di + 0], BOOTINFO_MAGIC
-    mov byte [es:di + BOOTINFO_VERSION], 1
+    mov byte [es:di + BOOTINFO_VERSION], 2
 
     mov al, [boot_drive]
     mov [es:di + BOOTINFO_BOOT_DRIVE], al
@@ -101,6 +103,9 @@ write_boot_info:
     mov ax, [es:di + BOOTINFO_EXT_KB]
     add eax, 1024
     mov [es:di + BOOTINFO_TOTAL_KB], eax
+
+    mov word [es:di + BOOTINFO_ROOTDIR_ENTRIES], 224
+    mov dword [es:di + BOOTINFO_ROOTDIR_ADDR], STAGE2_PHYSICAL_BASE + ROOT_DIR_BUFFER
 
     pop es
     pop di

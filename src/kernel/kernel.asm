@@ -11,6 +11,8 @@ bits 32
 %define BOOTINFO_CONV_KB        6
 %define BOOTINFO_EXT_KB         8
 %define BOOTINFO_TOTAL_KB       10
+%define BOOTINFO_ROOTDIR_ENTRIES 14
+%define BOOTINFO_ROOTDIR_ADDR    16
 %define LINE_BUFFER_SIZE        128
 
 start:
@@ -76,6 +78,12 @@ dispatch_command:
     jnz .mem
 
     mov esi, line_buffer
+    mov edi, cmd_ls
+    call command_equals
+    test eax, eax
+    jnz .ls
+
+    mov esi, line_buffer
     mov edi, cmd_halt
     call command_equals
     test eax, eax
@@ -124,6 +132,10 @@ dispatch_command:
 
 .mem:
     call print_memory_report
+    jmp .done
+
+.ls:
+    call print_root_directory
     jmp .done
 
 .echo_empty:
@@ -184,6 +196,137 @@ print_memory_report:
 .missing:
     mov esi, mem_missing
     call console_write
+    ret
+
+print_root_directory:
+    cmp dword [BOOT_INFO_ADDR], BOOTINFO_MAGIC
+    jne .missing
+
+    mov ebx, [BOOT_INFO_ADDR + BOOTINFO_ROOTDIR_ADDR]
+    movzx ecx, word [BOOT_INFO_ADDR + BOOTINFO_ROOTDIR_ENTRIES]
+    test ebx, ebx
+    jz .missing
+    test ecx, ecx
+    jz .empty
+
+    mov esi, ls_header
+    call console_write
+
+    xor edx, edx
+
+.next_entry:
+    test ecx, ecx
+    jz .done_listing
+    cmp byte [ebx], 0x00
+    je .done_listing
+    cmp byte [ebx], 0xE5
+    je .skip_entry
+
+    mov al, [ebx + 11]
+    cmp al, 0x0F
+    je .skip_entry
+    test al, 0x08
+    jnz .skip_entry
+
+    push ecx
+    push edx
+    push ebx
+
+    mov esi, ebx
+    call print_fat_name
+    mov esi, ls_spacing
+    call console_write
+    mov eax, [ebx + 28]
+    call print_uint32
+    mov esi, bytes_suffix
+    call console_write
+
+    pop ebx
+    pop edx
+    pop ecx
+    inc edx
+
+.skip_entry:
+    add ebx, 32
+    dec ecx
+    jmp .next_entry
+
+.done_listing:
+    test edx, edx
+    jnz .done
+
+.empty:
+    mov esi, ls_empty
+    call console_write
+    ret
+
+.missing:
+    mov esi, ls_missing
+    call console_write
+
+.done:
+    ret
+
+print_fat_name:
+    push eax
+    push ebx
+    push ecx
+    push edx
+    push esi
+
+    mov edx, esi
+    mov ecx, 8
+
+.name_loop:
+    test ecx, ecx
+    jz .check_ext
+    mov al, [edx]
+    cmp al, ' '
+    je .check_ext
+    call console_putc
+    inc edx
+    dec ecx
+    jmp .name_loop
+
+.check_ext:
+    mov edx, esi
+    add edx, 8
+    mov ecx, 3
+
+.scan_ext:
+    test ecx, ecx
+    jz .done
+    cmp byte [edx], ' '
+    jne .print_ext
+    inc edx
+    dec ecx
+    jmp .scan_ext
+
+.print_ext:
+    mov al, '.'
+    call console_putc
+
+    mov edx, esi
+    add edx, 8
+    mov ecx, 3
+
+.ext_loop:
+    test ecx, ecx
+    jz .done
+    mov al, [edx]
+    cmp al, ' '
+    je .done
+    call console_putc
+    inc edx
+    dec ecx
+    jmp .ext_loop
+
+.done:
+    pop esi
+    pop edx
+    pop ecx
+    pop ebx
+    pop eax
     ret
 
 read_line:
@@ -582,8 +725,8 @@ shell_hint:        db 'Type help. Input works from the QEMU keyboard or the seri
 
 prompt:            db 'lum> ', 0
 unknown_prefix:    db 'Unknown command: ', 0
-help_text:         db 'Commands: help, about, clear, mem, echo <text>, reboot, halt', 10, 0
-about_text:        db 'Lum-OS is a tiny from-scratch x86 OS demo with a FAT12 stage1/stage2 loader,', 10, 'a protected-mode kernel, and a small interactive shell.', 10, 0
+help_text:         db 'Commands: help, about, clear, mem, ls, echo <text>, reboot, halt', 10, 0
+about_text:        db 'Lum-OS is a tiny from-scratch x86 OS demo with a FAT12 stage1/stage2 loader,', 10, 'a protected-mode kernel, and a small interactive shell with root directory listing.', 10, 0
 halt_message:      db 'CPU halted.', 10, 0
 reboot_message:    db 'Rebooting system...', 10, 0
 mem_conv_prefix:   db 'Conventional memory: ', 0
@@ -591,11 +734,17 @@ mem_ext_prefix:    db 'Extended memory:     ', 0
 mem_total_prefix:  db 'Approx total memory: ', 0
 mem_missing:       db 'Memory info unavailable.', 10, 0
 kb_suffix:         db ' KB', 10, 0
+ls_header:         db 'Root directory:', 10, 0
+ls_spacing:        db '  ', 0
+bytes_suffix:      db ' bytes', 10, 0
+ls_empty:          db '<empty>', 10, 0
+ls_missing:        db 'Root directory metadata unavailable.', 10, 0
 
 cmd_help:          db 'help', 0
 cmd_about:         db 'about', 0
 cmd_clear:         db 'clear', 0
 cmd_mem:           db 'mem', 0
+cmd_ls:            db 'ls', 0
 cmd_echo:          db 'echo', 0
 cmd_echo_prefix:   db 'echo ', 0
 cmd_reboot:        db 'reboot', 0

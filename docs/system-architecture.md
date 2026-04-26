@@ -36,10 +36,13 @@ The kernel reads boot information from `0x9000`.
 Current fields:
 
 - signature
+- version
 - boot drive
 - conventional memory in KB
 - extended memory in KB
 - approximate total memory in KB
+- FAT12 root directory entry count
+- FAT12 root directory physical address
 
 ## Disk format
 

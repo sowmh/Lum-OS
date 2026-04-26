@@ -19,6 +19,7 @@ python tools/build.py kernel
 python tools/build.py image
 python tools/build.py run
 python tools/build.py run-headless
+python tools/build.py smoke-test
 python tools/build.py clean
 ```
 
@@ -60,6 +61,14 @@ You should see:
 - stage 2 serial messages
 - the kernel banner
 - the `lum>` prompt
+
+Use the automated smoke test when you want a repeatable boot-to-shell check:
+
+```bash
+python tools/build.py smoke-test
+```
+
+The smoke test boots QEMU with a TCP-backed serial port, waits for the prompt, and verifies `help`, `mem`, `ls`, `echo`, and `halt`.
 
 You can also pipe commands into QEMU for smoke tests:
 

@@ -20,7 +20,14 @@ Run it headless through the serial console:
 python tools/build.py run-headless
 ```
 
+Run the automated smoke test:
+
+```bash
+python tools/build.py smoke-test
+```
+
 Headless mode is useful for debugging because stage 2 and the kernel both print to COM1.
+The smoke test is useful when you want an end-to-end check without manually typing into QEMU.
 
 ## Input methods
 
@@ -35,6 +42,7 @@ The shell accepts input from:
 - `about` prints a short project summary
 - `clear` redraws the screen and banner
 - `mem` shows the memory values collected by stage 2
+- `ls` lists the FAT12 root directory entries that stage 2 cached during boot
 - `echo <text>` prints text back
 - `reboot` requests a keyboard-controller reset
 - `halt` stops the CPU

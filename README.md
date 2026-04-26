@@ -12,10 +12,12 @@ Lum-OS is a small x86 operating system project that now boots end-to-end from a 
   - `about`
   - `clear`
   - `mem`
+  - `ls`
   - `echo <text>`
   - `reboot`
   - `halt`
 - Portable image creation without `mkfs.fat`, `mcopy`, or Open Watcom.
+- Automated smoke test that boots QEMU, talks to the shell over COM1, and checks core commands.
 
 ## Tooling
 
@@ -33,6 +35,7 @@ The older C / Open Watcom files are still in the repository as experiments and r
 python tools/build.py image
 python tools/build.py run
 python tools/build.py run-headless
+python tools/build.py smoke-test
 ```
 
 If you prefer `make`, the top-level `Makefile` forwards to the same Python build tool:
@@ -41,9 +44,11 @@ If you prefer `make`, the top-level `Makefile` forwards to the same Python build
 make image
 make run
 make run-headless
+make smoke-test
 ```
 
 `run-headless` is the fastest way to verify the shell because it exposes COM1 on your terminal.
+`smoke-test` is the fastest fully automated check because it boots Lum-OS, waits for the prompt, and validates shell commands end-to-end.
 
 ## Project layout
 
@@ -57,6 +62,7 @@ src/
 tools/
   build.py               # portable build and run entry point
   build_image.py         # FAT12 floppy image generator
+  smoke_test.py          # automated QEMU serial smoke test
 docs/
   user-guide.md
   developer-guide.md
@@ -78,7 +84,7 @@ This repository now has a clean, working vertical slice. Good next steps would b
 
 - IDT setup and exception handlers
 - timer and keyboard drivers beyond polling
-- file commands inside the shell
+- richer file commands beyond root directory listing
 - allocator and paging
 - user-space program loading
 
