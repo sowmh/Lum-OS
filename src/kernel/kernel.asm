@@ -14,13 +14,35 @@ bits 32
 %define BOOTINFO_ROOTDIR_ENTRIES 14
 %define BOOTINFO_ROOTDIR_ADDR    16
 %define LINE_BUFFER_SIZE        128
+%define KBD_QUEUE_SIZE           64
+%define TIMER_HZ                100
+%define KBD_DEBOUNCE_TICKS        2
+%define HEAP_START          0x00120000
+%define HEAP_SIZE           0x00100000
+%define HEAP_MAGIC          0x4B484541
+%define HEAP_HDR_SIZE       16
+%define MAX_PHYS_MEM        0x01000000
+%define FRAME_SIZE          4096
+%define FRAME_COUNT         (MAX_PHYS_MEM / FRAME_SIZE)
+%define KERNEL_STACK_TOP    0x00110000
+%define KERNEL_STACK_GUARD  0x0010C000
+
+%macro INSTALL_ISR 2
+    mov eax, %2
+    mov ebx, %1
+    call set_idt_gate
+%endmacro
 
 start:
     cli
-    mov esp, 0x0009F000
+    mov esp, KERNEL_STACK_TOP
 
     mov byte [text_color], 0x0F
+    call init_idt
     call serial_init
+    call init_irq
+    call init_paging
+    call init_memory
     call clear_screen
     call show_banner
 
@@ -47,6 +69,383 @@ show_banner:
     mov byte [text_color], 0x07
     mov esi, shell_hint
     call console_write
+    ret
+
+init_idt:
+    INSTALL_ISR 0, isr0
+    INSTALL_ISR 1, isr1
+    INSTALL_ISR 2, isr2
+    INSTALL_ISR 3, isr3
+    INSTALL_ISR 4, isr4
+    INSTALL_ISR 5, isr5
+    INSTALL_ISR 6, isr6
+    INSTALL_ISR 7, isr7
+    INSTALL_ISR 8, isr8
+    INSTALL_ISR 9, isr9
+    INSTALL_ISR 10, isr10
+    INSTALL_ISR 11, isr11
+    INSTALL_ISR 12, isr12
+    INSTALL_ISR 13, isr13
+    INSTALL_ISR 14, isr14
+    INSTALL_ISR 15, isr15
+    INSTALL_ISR 16, isr16
+    INSTALL_ISR 17, isr17
+    INSTALL_ISR 18, isr18
+    INSTALL_ISR 19, isr19
+    INSTALL_ISR 20, isr20
+    INSTALL_ISR 21, isr21
+    INSTALL_ISR 22, isr22
+    INSTALL_ISR 23, isr23
+    INSTALL_ISR 24, isr24
+    INSTALL_ISR 25, isr25
+    INSTALL_ISR 26, isr26
+    INSTALL_ISR 27, isr27
+    INSTALL_ISR 28, isr28
+    INSTALL_ISR 29, isr29
+    INSTALL_ISR 30, isr30
+    INSTALL_ISR 31, isr31
+    INSTALL_ISR 32, irq32
+    INSTALL_ISR 33, irq33
+    INSTALL_ISR 34, irq34
+    INSTALL_ISR 35, irq35
+    INSTALL_ISR 36, irq36
+    INSTALL_ISR 37, irq37
+    INSTALL_ISR 38, irq38
+    INSTALL_ISR 39, irq39
+    INSTALL_ISR 40, irq40
+    INSTALL_ISR 41, irq41
+    INSTALL_ISR 42, irq42
+    INSTALL_ISR 43, irq43
+    INSTALL_ISR 44, irq44
+    INSTALL_ISR 45, irq45
+    INSTALL_ISR 46, irq46
+    INSTALL_ISR 47, irq47
+    lidt [idtr]
+    ret
+
+init_irq:
+    call pic_remap
+    call pit_init
+    sti
+    ret
+
+pic_remap:
+    mov al, 0x11
+    out 0x20, al
+    out 0xA0, al
+
+    mov al, 0x20
+    out 0x21, al
+    mov al, 0x28
+    out 0xA1, al
+
+    mov al, 0x04
+    out 0x21, al
+    mov al, 0x02
+    out 0xA1, al
+
+    mov al, 0x01
+    out 0x21, al
+    out 0xA1, al
+
+    ; Unmask only IRQ0 (timer) and IRQ1 (keyboard) on master; keep slave masked.
+    mov al, 0xFC
+    out 0x21, al
+    mov al, 0xFF
+    out 0xA1, al
+    ret
+
+pit_init:
+    mov al, 0x36
+    out 0x43, al
+    mov ax, 11932
+    out 0x40, al
+    mov al, ah
+    out 0x40, al
+    ret
+
+init_paging:
+    call init_frame_bitmap
+    call setup_identity_paging
+    ret
+
+init_frame_bitmap:
+    push eax
+    push ecx
+    push edi
+
+    mov edi, frame_bitmap
+    mov ecx, FRAME_COUNT / 8
+    xor eax, eax
+    rep stosb
+    pop edi
+    pop ecx
+    pop eax
+    ret
+
+setup_identity_paging:
+    ; Clear page directory and first page table.
+    push eax
+    push ecx
+    push edi
+
+    mov edi, page_directory
+    mov ecx, 1024
+    xor eax, eax
+    rep stosd
+
+    mov edi, first_page_table
+    mov ecx, 1024
+    xor eax, eax
+    rep stosd
+
+    ; Fill first page table with identity mappings, RW supervisor.
+    xor ecx, ecx
+.map_loop:
+    mov eax, ecx
+    shl eax, 12
+    or eax, 0x003
+    mov [first_page_table + ecx * 4], eax
+    inc ecx
+    cmp ecx, 1024
+    jb .map_loop
+
+    ; Protection: keep null page unmapped.
+    mov dword [first_page_table + 0], 0
+    ; Real guard page below kernel stack.
+    mov dword [first_page_table + ((KERNEL_STACK_GUARD >> 12) * 4)], 0
+
+    ; Mark a low identity page as present/read-only.
+    mov eax, [first_page_table + ((0x1000 >> 12) * 4)]
+    and eax, 0xFFFFFFFD
+    mov [first_page_table + ((0x1000 >> 12) * 4)], eax
+
+    ; Page directory entry 0 -> first page table.
+    mov eax, first_page_table
+    or eax, 0x003
+    mov [page_directory + 0], eax
+
+    ; Load CR3 and enable paging.
+    mov eax, page_directory
+    mov cr3, eax
+    mov eax, cr0
+    or eax, 0x80000000
+    mov cr0, eax
+    jmp short $+2
+
+    pop edi
+    pop ecx
+    pop eax
+    ret
+
+set_idt_gate:
+    push ebx
+    push edi
+
+    shl ebx, 3
+    mov edi, idt_start
+    add edi, ebx
+
+    mov word [edi], ax
+    mov word [edi + 2], 0x08
+    mov byte [edi + 4], 0
+    mov byte [edi + 5], 0x8E
+    shr eax, 16
+    mov word [edi + 6], ax
+
+    pop edi
+    pop ebx
+    ret
+
+isr_common:
+    cli
+    pushad
+
+    mov esi, exception_prefix
+    call console_write
+
+    mov eax, [esp + 32]
+    call print_uint32
+
+    mov esi, exception_error_prefix
+    call console_write
+
+    mov eax, [esp + 36]
+    call print_uint32
+
+    mov eax, [esp + 32]
+    cmp eax, 14
+    jne .no_pf
+    mov esi, pf_addr_prefix
+    call console_write
+    mov eax, cr2
+    call print_uint32
+    mov esi, pf_addr_suffix
+    call console_write
+
+.no_pf:
+    mov esi, exception_halt_suffix
+    call console_write
+
+.halt:
+    hlt
+    jmp .halt
+
+irq_common:
+    pushad
+
+    mov eax, [esp + 32]
+    cmp eax, 32
+    jne .check_keyboard
+    inc dword [timer_ticks]
+    jmp .send_eoi
+
+.check_keyboard:
+    cmp eax, 33
+    jne .send_eoi
+    call irq_keyboard
+
+.send_eoi:
+    mov al, 0x20
+    cmp eax, 40
+    jb .master_only
+    out 0xA0, al
+.master_only:
+    out 0x20, al
+
+    popad
+    add esp, 8
+    iretd
+
+irq_keyboard:
+    push eax
+    push ebx
+    push ecx
+    push edx
+
+    in al, 0x64
+    test al, 0x01
+    jz .done
+
+    in al, 0x60
+    cmp al, 0xE0
+    je .done
+
+    cmp al, 0x2A
+    je .shift_pressed
+    cmp al, 0x36
+    je .shift_pressed
+    cmp al, 0xAA
+    je .shift_released
+    cmp al, 0xB6
+    je .shift_released
+    cmp al, 0x3A
+    je .caps_toggle
+    cmp al, 0x1D
+    je .ctrl_pressed
+    cmp al, 0x9D
+    je .ctrl_released
+    cmp al, 0x38
+    je .alt_pressed
+    cmp al, 0xB8
+    je .alt_released
+
+    test al, 0x80
+    jnz .done
+
+    movzx ecx, byte [last_make_scancode]
+    cmp al, cl
+    jne .new_make
+    mov ecx, [timer_ticks]
+    sub ecx, [last_make_tick]
+    cmp ecx, KBD_DEBOUNCE_TICKS
+    jb .done
+
+.new_make:
+    mov [last_make_scancode], al
+    mov ecx, [timer_ticks]
+    mov [last_make_tick], ecx
+
+    movzx ebx, al
+    movzx ecx, byte [kbd_shift]
+    test ecx, ecx
+    jz .map_normal
+    mov al, [kbd_scancode_shift_table + ebx]
+    jmp .mapped
+
+.map_normal:
+    mov al, [kbd_scancode_table + ebx]
+
+.mapped:
+    test al, al
+    jz .done
+
+    cmp al, 'a'
+    jb .check_upper
+    cmp al, 'z'
+    ja .check_upper
+    movzx ecx, byte [kbd_caps]
+    test ecx, ecx
+    jz .queue
+    sub al, 32
+    jmp .queue
+
+.check_upper:
+    cmp al, 'A'
+    jb .queue
+    cmp al, 'Z'
+    ja .queue
+    movzx ecx, byte [kbd_caps]
+    test ecx, ecx
+    jz .queue
+    add al, 32
+    jmp .queue
+
+.shift_pressed:
+    mov byte [kbd_shift], 1
+    jmp .done
+
+.shift_released:
+    mov byte [kbd_shift], 0
+    jmp .done
+
+.caps_toggle:
+    xor byte [kbd_caps], 1
+    jmp .done
+
+.ctrl_pressed:
+    mov byte [kbd_ctrl], 1
+    jmp .done
+
+.ctrl_released:
+    mov byte [kbd_ctrl], 0
+    jmp .done
+
+.alt_pressed:
+    mov byte [kbd_alt], 1
+    jmp .done
+
+.alt_released:
+    mov byte [kbd_alt], 0
+    jmp .done
+
+.queue:
+    movzx ebx, byte [kbd_head]
+    movzx ecx, byte [kbd_tail]
+    mov edx, ebx
+    inc edx
+    and edx, KBD_QUEUE_SIZE - 1
+    cmp edx, ecx
+    je .done
+
+    mov [kbd_queue + ebx], al
+    mov [kbd_head], dl
+
+.done:
+    pop edx
+    pop ecx
+    pop ebx
+    pop eax
     ret
 
 dispatch_command:
@@ -84,6 +483,30 @@ dispatch_command:
     jnz .ls
 
     mov esi, line_buffer
+    mov edi, cmd_heap
+    call command_equals
+    test eax, eax
+    jnz .heap
+
+    mov esi, line_buffer
+    mov edi, cmd_ticks
+    call command_equals
+    test eax, eax
+    jnz .ticks
+
+    mov esi, line_buffer
+    mov edi, cmd_uptime
+    call command_equals
+    test eax, eax
+    jnz .uptime
+
+    mov esi, line_buffer
+    mov edi, cmd_memtest
+    call command_equals
+    test eax, eax
+    jnz .memtest
+
+    mov esi, line_buffer
     mov edi, cmd_halt
     call command_equals
     test eax, eax
@@ -106,6 +529,18 @@ dispatch_command:
     call starts_with
     test eax, eax
     jnz .echo_with_text
+
+    mov esi, line_buffer
+    mov edi, cmd_alloc_prefix
+    call starts_with
+    test eax, eax
+    jnz .alloc
+
+    mov esi, line_buffer
+    mov edi, cmd_free_prefix
+    call starts_with
+    test eax, eax
+    jnz .free
 
     mov esi, unknown_prefix
     call console_write
@@ -138,6 +573,22 @@ dispatch_command:
     call print_root_directory
     jmp .done
 
+.heap:
+    call print_heap_report
+    jmp .done
+
+.ticks:
+    call print_timer_report
+    jmp .done
+
+.uptime:
+    call print_uptime_report
+    jmp .done
+
+.memtest:
+    call run_memory_stress_test
+    jmp .done
+
 .echo_empty:
     mov al, 10
     call console_putc
@@ -148,6 +599,61 @@ dispatch_command:
     call console_write
     mov al, 10
     call console_putc
+    jmp .done
+
+.alloc:
+    mov esi, line_buffer + 6
+    call parse_uint32
+    test edx, edx
+    jz .alloc_usage
+    test eax, eax
+    jz .alloc_usage
+
+    call kmalloc_align16
+    test eax, eax
+    jz .alloc_failed
+
+    mov esi, alloc_ok_prefix
+    call console_write
+    call print_uint32
+    mov esi, alloc_ok_mid
+    call console_write
+    mov eax, [last_alloc_size]
+    call print_uint32
+    mov esi, bytes_suffix
+    call console_write
+    jmp .done
+
+.alloc_usage:
+    mov esi, alloc_usage_text
+    call console_write
+    jmp .done
+
+.alloc_failed:
+    mov esi, alloc_failed_text
+    call console_write
+    jmp .done
+
+.free:
+    mov esi, line_buffer + 5
+    call parse_uint32
+    test edx, edx
+    jz .free_usage
+    call kfree
+    test edx, edx
+    jz .free_failed
+    mov esi, free_ok_text
+    call console_write
+    jmp .done
+
+.free_usage:
+    mov esi, free_usage_text
+    call console_write
+    jmp .done
+
+.free_failed:
+    mov esi, free_failed_text
+    call console_write
     jmp .done
 
 .halt:
@@ -191,6 +697,8 @@ print_memory_report:
     call print_uint32
     mov esi, kb_suffix
     call console_write
+
+    call print_heap_report
     ret
 
 .missing:
@@ -265,6 +773,572 @@ print_root_directory:
     call console_write
 
 .done:
+    ret
+
+print_timer_report:
+    mov esi, ticks_prefix
+    call console_write
+    mov eax, [timer_ticks]
+    call print_uint32
+    mov esi, ticks_suffix
+    call console_write
+
+    mov esi, uptime_prefix
+    call console_write
+    mov eax, [timer_ticks]
+    xor edx, edx
+    mov ebx, TIMER_HZ
+    div ebx
+    call print_uint32
+    mov esi, seconds_suffix
+    call console_write
+    ret
+
+init_memory:
+    mov dword [heap_end], HEAP_START + HEAP_SIZE
+    mov dword [last_alloc_size], 0
+    mov dword [heap_used_bytes], 0
+    mov dword [heap_alloc_count], 0
+    mov dword [heap_free_count], 0
+    mov dword [heap_high_water], 0
+
+    ; Initialize one large free block.
+    mov dword [heap_free_head], HEAP_START
+    mov dword [HEAP_START + 0], HEAP_SIZE - HEAP_HDR_SIZE
+    mov dword [HEAP_START + 4], 0
+    mov dword [HEAP_START + 8], 1
+    mov dword [HEAP_START + 12], HEAP_MAGIC
+    ret
+
+kmalloc_align16:
+    ; in: eax=size bytes, out: eax=allocated address (0 on OOM), first-fit + split
+    push ebx
+    push ecx
+    push edx
+    push esi
+    push edi
+
+    mov [last_alloc_size], eax
+    add eax, 15
+    and eax, 0xFFFFFFF0
+    mov esi, eax                    ; requested aligned payload size
+
+    xor edi, edi                    ; prev block ptr
+    mov ebx, [heap_free_head]       ; current block ptr
+
+.scan:
+    test ebx, ebx
+    jz .oom
+    mov eax, [ebx + 0]
+    cmp eax, esi
+    jae .fit
+    mov edi, ebx
+    mov ebx, [ebx + 4]
+    jmp .scan
+
+.fit:
+    mov edx, [ebx + 0]              ; old block size
+    mov ecx, edx
+    sub ecx, esi
+    cmp ecx, HEAP_HDR_SIZE + 16
+    jb .use_whole
+
+    ; Split block: allocated head + free remainder.
+    lea eax, [ebx + HEAP_HDR_SIZE + esi]    ; remainder block header
+    mov [eax + 0], ecx
+    sub dword [eax + 0], HEAP_HDR_SIZE
+    mov edx, [ebx + 4]
+    mov [eax + 4], edx
+    mov dword [eax + 8], 1
+    mov dword [eax + 12], HEAP_MAGIC
+
+    test edi, edi
+    jz .set_head_split
+    mov [edi + 4], eax
+    jmp .mark_alloc
+.set_head_split:
+    mov [heap_free_head], eax
+    jmp .mark_alloc
+
+.use_whole:
+    mov eax, [ebx + 4]
+    test edi, edi
+    jz .set_head_whole
+    mov [edi + 4], eax
+    jmp .mark_alloc
+.set_head_whole:
+    mov [heap_free_head], eax
+
+.mark_alloc:
+    mov dword [ebx + 8], 0
+    mov dword [ebx + 12], HEAP_MAGIC
+    add dword [heap_used_bytes], esi
+    inc dword [heap_alloc_count]
+    lea eax, [ebx + HEAP_HDR_SIZE]
+    call update_heap_high_water
+    jmp .out
+
+.oom:
+    xor eax, eax
+
+.out:
+    pop edi
+    pop esi
+    pop edx
+    pop ecx
+    pop ebx
+    ret
+
+update_heap_high_water:
+    ; in eax = allocated payload address
+    push ebx
+    push ecx
+    mov ebx, eax
+    sub ebx, HEAP_START
+    mov ecx, [last_alloc_size]
+    add ebx, ecx
+    cmp ebx, [heap_high_water]
+    jbe .done
+    mov [heap_high_water], ebx
+.done:
+    pop ecx
+    pop ebx
+    ret
+
+print_heap_report:
+    mov esi, heap_start_prefix
+    call console_write
+    mov eax, HEAP_START
+    call print_uint32
+    mov esi, heap_end_prefix
+    call console_write
+    mov eax, [heap_end]
+    call print_uint32
+    mov esi, heap_used_prefix
+    call console_write
+    mov eax, [heap_used_bytes]
+    call print_uint32
+    mov esi, bytes_suffix
+    call console_write
+    mov esi, heap_free_prefix
+    call console_write
+    mov eax, [heap_end]
+    sub eax, HEAP_START
+    sub eax, [heap_used_bytes]
+    call print_uint32
+    mov esi, bytes_suffix
+    call console_write
+
+    mov esi, heap_hw_prefix
+    call console_write
+    mov eax, [heap_high_water]
+    call print_uint32
+    mov esi, bytes_suffix
+    call console_write
+
+    mov esi, heap_ops_prefix
+    call console_write
+    mov eax, [heap_alloc_count]
+    call print_uint32
+    mov esi, slash_sep
+    call console_write
+    mov eax, [heap_free_count]
+    call print_uint32
+    mov esi, newline_suffix
+    call console_write
+    ret
+
+kfree:
+    ; in eax = payload address, returns edx=1 success / 0 fail
+    push eax
+    push ebx
+    push ecx
+    push esi
+    push edi
+    xor edx, edx
+    test eax, eax
+    jz .out
+    cmp eax, HEAP_START + HEAP_HDR_SIZE
+    jb .out
+    cmp eax, [heap_end]
+    jae .out
+
+    lea ebx, [eax - HEAP_HDR_SIZE]
+    cmp dword [ebx + 12], HEAP_MAGIC
+    jne .out
+    cmp dword [ebx + 8], 0
+    jne .out
+
+    mov dword [ebx + 8], 1
+    inc dword [heap_free_count]
+
+    ; Track used bytes approximately.
+    mov ecx, [ebx + 0]
+    sub dword [heap_used_bytes], ecx
+
+    ; Insert into free list sorted by address.
+    xor edi, edi
+    mov esi, [heap_free_head]
+.find_pos:
+    test esi, esi
+    jz .insert_here
+    cmp esi, ebx
+    ja .insert_here
+    mov edi, esi
+    mov esi, [esi + 4]
+    jmp .find_pos
+
+.insert_here:
+    mov [ebx + 4], esi
+    test edi, edi
+    jz .set_head
+    mov [edi + 4], ebx
+    jmp .coalesce
+.set_head:
+    mov [heap_free_head], ebx
+
+.coalesce:
+    ; Merge with next contiguous.
+    mov esi, [ebx + 4]
+    test esi, esi
+    jz .coalesce_prev
+    lea ecx, [ebx + HEAP_HDR_SIZE]
+    add ecx, [ebx + 0]
+    cmp ecx, esi
+    jne .coalesce_prev
+    mov ecx, [esi + 0]
+    add [ebx + 0], ecx
+    add dword [ebx + 0], HEAP_HDR_SIZE
+    mov ecx, [esi + 4]
+    mov [ebx + 4], ecx
+
+.coalesce_prev:
+    test edi, edi
+    jz .ok
+    lea ecx, [edi + HEAP_HDR_SIZE]
+    add ecx, [edi + 0]
+    cmp ecx, ebx
+    jne .ok
+    mov ecx, [ebx + 0]
+    add [edi + 0], ecx
+    add dword [edi + 0], HEAP_HDR_SIZE
+    mov ecx, [ebx + 4]
+    mov [edi + 4], ecx
+
+.ok:
+    mov edx, 1
+.out:
+    pop edi
+    pop esi
+    pop ecx
+    pop ebx
+    pop eax
+    ret
+
+alloc_frame:
+    ; out: eax = physical frame base, 0 on fail
+    push ebx
+    push ecx
+    push edx
+    xor ecx, ecx
+.next:
+    cmp ecx, FRAME_COUNT
+    jae .fail
+    mov ebx, ecx
+    shr ebx, 3
+    mov dl, [frame_bitmap + ebx]
+    mov ebx, ecx
+    and ebx, 7
+    bt edx, ebx
+    jc .used
+    bts edx, ebx
+    mov ebx, ecx
+    shr ebx, 3
+    mov [frame_bitmap + ebx], dl
+    mov eax, ecx
+    shl eax, 12
+    jmp .out
+.used:
+    inc ecx
+    jmp .next
+.fail:
+    xor eax, eax
+.out:
+    pop edx
+    pop ecx
+    pop ebx
+    ret
+
+free_frame:
+    ; in: eax=physical frame base
+    push ebx
+    push ecx
+    mov ecx, eax
+    shr ecx, 12
+    cmp ecx, FRAME_COUNT
+    jae .out
+    mov ebx, ecx
+    shr ebx, 3
+    mov al, [frame_bitmap + ebx]
+    mov ebx, ecx
+    and ebx, 7
+    btr eax, ebx
+    mov ebx, ecx
+    shr ebx, 3
+    mov [frame_bitmap + ebx], al
+.out:
+    pop ecx
+    pop ebx
+    ret
+
+map_page:
+    ; in: eax=virt, ebx=phys, ecx=flags (RW/US bits), edx=1 alloc frame if phys==0
+    ; supports first 4MiB table only in current kernel layout.
+    push esi
+    push edi
+    mov edi, eax
+    cmp edi, 0x1000
+    jb .fail
+    cmp eax, 0x00400000
+    jae .fail
+    test ecx, 0xFFFFFFF9
+    jnz .fail
+    ; Kernel lower region cannot be user-mapped.
+    test ecx, 0x4
+    jz .perm_ok
+    cmp edi, HEAP_START
+    jb .fail
+.perm_ok:
+    test ebx, ebx
+    jnz .have_phys
+    test edx, edx
+    jz .fail
+    call alloc_frame
+    test eax, eax
+    jz .fail
+    mov ebx, eax
+.have_phys:
+    mov esi, edi
+    shr esi, 12
+    mov eax, ebx
+    and eax, 0xFFFFF000
+    and ecx, 0x6
+    or eax, ecx
+    or eax, 0x1
+    mov [first_page_table + esi * 4], eax
+    mov eax, edi
+    invlpg [eax]
+    mov eax, 1
+    pop edi
+    pop esi
+    ret
+.fail:
+    xor eax, eax
+    pop edi
+    pop esi
+    ret
+
+unmap_page:
+    ; in: eax=virt
+    push ebx
+    push ecx
+    cmp eax, 0x00400000
+    jae .fail
+    mov ecx, eax
+    shr ecx, 12
+    mov ebx, [first_page_table + ecx * 4]
+    test ebx, 1
+    jz .fail
+    and ebx, 0xFFFFF000
+    mov eax, ebx
+    call free_frame
+    mov dword [first_page_table + ecx * 4], 0
+    mov eax, ecx
+    shl eax, 12
+    invlpg [eax]
+    mov eax, 1
+    jmp .out
+.fail:
+    xor eax, eax
+.out:
+    pop ecx
+    pop ebx
+    ret
+
+is_range_mapped:
+    ; in: eax=addr, ebx=len. out edx=1 mapped, 0 not mapped
+    push ecx
+    push esi
+    xor edx, edx
+    test ebx, ebx
+    jz .ok
+    mov ecx, eax
+    add ecx, ebx
+    dec ecx
+    cmp ecx, 0x003FFFFF
+    ja .out
+    mov esi, eax
+    shr esi, 12
+.check:
+    mov eax, [first_page_table + esi * 4]
+    test eax, 1
+    jz .out
+    mov eax, ecx
+    shr eax, 12
+    cmp esi, eax
+    jae .ok
+    inc esi
+    jmp .check
+.ok:
+    mov edx, 1
+.out:
+    pop esi
+    pop ecx
+    ret
+
+safe_memzero:
+    ; in: edi=dst, ecx=len, out edx=1/0
+    push eax
+    push ebx
+    mov eax, edi
+    mov ebx, ecx
+    call is_range_mapped
+    test edx, edx
+    jz .done
+    xor eax, eax
+    rep stosb
+.done:
+    pop ebx
+    pop eax
+    ret
+
+safe_memcpy:
+    ; in: edi=dst, esi=src, ecx=len, out edx=1/0
+    push eax
+    push ebx
+    mov eax, edi
+    mov ebx, ecx
+    call is_range_mapped
+    test edx, edx
+    jz .done
+    mov eax, esi
+    mov ebx, ecx
+    call is_range_mapped
+    test edx, edx
+    jz .done
+    rep movsb
+.done:
+    pop ebx
+    pop eax
+    ret
+
+run_memory_stress_test:
+    ; Basic stress: thousands of alloc/free cycles + OOM probe.
+    push eax
+    push ebx
+    push ecx
+    push edx
+    push esi
+
+    mov esi, memtest_start_text
+    call console_write
+    mov ebx, 500
+.loop:
+    mov eax, 64
+    call kmalloc_align16
+    test eax, eax
+    jz .fail
+    push eax
+    mov edi, eax
+    mov ecx, 64
+    call safe_memzero
+    pop eax
+    call kfree
+    test edx, edx
+    jz .fail
+    dec ebx
+    jnz .loop
+
+    ; OOM probe: ask more than heap.
+    mov eax, HEAP_SIZE + 4096
+    call kmalloc_align16
+    test eax, eax
+    jnz .fail
+
+    mov esi, memtest_ok_text
+    call console_write
+    jmp .out
+
+.fail:
+    mov esi, memtest_fail_text
+    call console_write
+
+.out:
+    pop esi
+    pop edx
+    pop ecx
+    pop ebx
+    pop eax
+    ret
+
+parse_uint32:
+    ; in: esi=str, out: eax=value, edx=1 success / 0 fail
+    xor eax, eax
+    xor edx, edx
+    xor ecx, ecx
+
+.loop:
+    mov bl, [esi]
+    test bl, bl
+    jz .done
+    cmp bl, '0'
+    jb .fail
+    cmp bl, '9'
+    ja .fail
+    imul eax, eax, 10
+    movzx ebx, bl
+    sub ebx, '0'
+    add eax, ebx
+    inc esi
+    inc ecx
+    jmp .loop
+
+.done:
+    test ecx, ecx
+    jz .fail
+    mov edx, 1
+    ret
+
+.fail:
+    xor eax, eax
+    xor edx, edx
+    ret
+
+print_uptime_report:
+    mov eax, [timer_ticks]
+    xor edx, edx
+    mov ebx, TIMER_HZ
+    div ebx
+    mov [uptime_seconds], eax
+    mov [uptime_tick_remainder], edx
+
+    mov eax, [uptime_tick_remainder]
+    imul eax, eax, 1000
+    xor edx, edx
+    mov ebx, TIMER_HZ
+    div ebx
+    mov [uptime_millis], eax
+
+    mov esi, uptime_detail_prefix
+    call console_write
+    mov eax, [uptime_seconds]
+    call print_uint32
+    mov al, '.'
+    call console_putc
+    mov eax, [uptime_millis]
+    call print_uint32_3pad
+    mov esi, seconds_suffix
+    call console_write
     ret
 
 print_fat_name:
@@ -377,20 +1451,15 @@ read_input_char:
     ret
 
 .keyboard:
-    in al, 0x64
-    test al, 0x01
-    jz .poll
-
-    in al, 0x60
-    cmp al, 0xE0
+    movzx ebx, byte [kbd_tail]
+    movzx ecx, byte [kbd_head]
+    cmp ebx, ecx
     je .poll
-    test al, 0x80
-    jnz .poll
 
-    movzx ebx, al
-    mov al, [kbd_scancode_table + ebx]
-    test al, al
-    jz .poll
+    mov al, [kbd_queue + ebx]
+    inc ebx
+    and ebx, KBD_QUEUE_SIZE - 1
+    mov [kbd_tail], bl
     ret
 
 command_equals:
@@ -698,6 +1767,23 @@ print_uint32:
     pop eax
     ret
 
+print_uint32_3pad:
+    push eax
+    cmp eax, 100
+    jae .print
+    mov al, '0'
+    call console_putc
+    mov eax, [esp]
+    cmp eax, 10
+    jae .print
+    mov al, '0'
+    call console_putc
+.print:
+    mov eax, [esp]
+    call print_uint32
+    pop eax
+    ret
+
 reboot_system:
 .wait_ready:
     in al, 0x64
@@ -712,20 +1798,137 @@ reboot_system:
     hlt
     jmp .hang
 
+%macro ISR_NOERR 1
+isr%1:
+    push dword 0
+    push dword %1
+    jmp isr_common
+%endmacro
+
+%macro ISR_ERR 1
+isr%1:
+    push dword %1
+    jmp isr_common
+%endmacro
+
+ISR_NOERR 0
+ISR_NOERR 1
+ISR_NOERR 2
+ISR_NOERR 3
+ISR_NOERR 4
+ISR_NOERR 5
+ISR_NOERR 6
+ISR_NOERR 7
+ISR_ERR   8
+ISR_NOERR 9
+ISR_ERR   10
+ISR_ERR   11
+ISR_ERR   12
+ISR_ERR   13
+ISR_ERR   14
+ISR_NOERR 15
+ISR_NOERR 16
+ISR_ERR   17
+ISR_NOERR 18
+ISR_NOERR 19
+ISR_NOERR 20
+ISR_NOERR 21
+ISR_NOERR 22
+ISR_NOERR 23
+ISR_NOERR 24
+ISR_NOERR 25
+ISR_NOERR 26
+ISR_NOERR 27
+ISR_NOERR 28
+ISR_NOERR 29
+ISR_ERR   30
+ISR_NOERR 31
+
+%macro IRQ_STUB 1
+irq%1:
+    push dword 0
+    push dword %1
+    jmp irq_common
+%endmacro
+
+IRQ_STUB 32
+IRQ_STUB 33
+IRQ_STUB 34
+IRQ_STUB 35
+IRQ_STUB 36
+IRQ_STUB 37
+IRQ_STUB 38
+IRQ_STUB 39
+IRQ_STUB 40
+IRQ_STUB 41
+IRQ_STUB 42
+IRQ_STUB 43
+IRQ_STUB 44
+IRQ_STUB 45
+IRQ_STUB 46
+IRQ_STUB 47
+
+align 8
+idt_start:
+    times 256 dq 0
+idt_end:
+
+idtr:
+    dw idt_end - idt_start - 1
+    dd idt_start
+
 text_color:        db 0x0F
 serial_shadow:     db 0
 cursor_row:        dd 0
 cursor_col:        dd 0
+timer_ticks:       dd 0
+heap_free_head:    dd HEAP_START
+heap_end:          dd HEAP_START + HEAP_SIZE
+heap_used_bytes:   dd 0
+last_alloc_size:   dd 0
+heap_alloc_count:  dd 0
+heap_free_count:   dd 0
+heap_high_water:   dd 0
+kbd_head:          db 0
+kbd_tail:          db 0
+kbd_shift:         db 0
+kbd_caps:          db 0
+kbd_ctrl:          db 0
+kbd_alt:           db 0
+last_make_scancode: db 0
+last_make_tick:    dd 0
+kbd_queue:         times KBD_QUEUE_SIZE db 0
 
 banner_top:        db '==============================================================', 10, 0
 banner_mid:        db ' Lum-OS kernel online (32-bit protected mode)', 10, 0
 banner_bottom:     db '==============================================================', 10, 0
 boot_ok_message:   db '[ok] Boot path complete: FAT12 -> stage2 -> protected mode -> kernel', 10, 0
 shell_hint:        db 'Type help. Input works from the QEMU keyboard or the serial console.', 10, 10, 0
+exception_prefix:  db '[EXCEPTION] vector=', 0
+exception_error_prefix: db ' error=', 0
+pf_addr_prefix:    db ' cr2=', 0
+pf_addr_suffix:    db 10, 0
+exception_halt_suffix: db ' System halted.', 10, 0
+readonly_page:     db 'Lum-OS read-only guard page', 0
 
 prompt:            db 'lum> ', 0
 unknown_prefix:    db 'Unknown command: ', 0
-help_text:         db 'Commands: help, about, clear, mem, ls, echo <text>, reboot, halt', 10, 0
+help_text:         db 'Commands: help, about, clear, mem, ls, heap, ticks, uptime, alloc <bytes>, free <addr>, memtest, echo <text>, reboot, halt', 10, 0
+alloc_usage_text:  db 'Usage: alloc <bytes>', 10, 0
+alloc_failed_text: db 'Allocation failed: out of heap memory.', 10, 0
+alloc_ok_prefix:   db 'Allocated at ', 0
+alloc_ok_mid:      db ' size=', 0
+free_usage_text:   db 'Usage: free <addr>', 10, 0
+free_failed_text:  db 'Free failed: invalid or already freed block.', 10, 0
+free_ok_text:      db 'Block released.', 10, 0
+memtest_start_text: db 'Running memory stress test...', 10, 0
+memtest_ok_text:   db 'Memory stress test passed.', 10, 0
+memtest_fail_text: db 'Memory stress test FAILED.', 10, 0
+ticks_prefix:      db 'Timer ticks: ', 0
+ticks_suffix:      db ' ticks', 10, 0
+uptime_prefix:     db 'Approx uptime: ', 0
+uptime_detail_prefix: db 'Uptime exact: ', 0
+seconds_suffix:    db ' s', 10, 0
 about_text:        db 'Lum-OS is a tiny from-scratch x86 OS demo with a FAT12 stage1/stage2 loader,', 10, 'a protected-mode kernel, and a small interactive shell with root directory listing.', 10, 0
 halt_message:      db 'CPU halted.', 10, 0
 reboot_message:    db 'Rebooting system...', 10, 0
@@ -737,6 +1940,14 @@ kb_suffix:         db ' KB', 10, 0
 ls_header:         db 'Root directory:', 10, 0
 ls_spacing:        db '  ', 0
 bytes_suffix:      db ' bytes', 10, 0
+heap_start_prefix: db 'Heap start: ', 0
+heap_end_prefix:   db ' end: ', 0
+heap_used_prefix:  db 10, 'Heap used: ', 0
+heap_free_prefix:  db ' free: ', 0
+heap_hw_prefix:    db ' high-water: ', 0
+heap_ops_prefix:   db 10, 'Heap ops alloc/free: ', 0
+slash_sep:         db '/', 0
+newline_suffix:    db 10, 0
 ls_empty:          db '<empty>', 10, 0
 ls_missing:        db 'Root directory metadata unavailable.', 10, 0
 
@@ -745,8 +1956,14 @@ cmd_about:         db 'about', 0
 cmd_clear:         db 'clear', 0
 cmd_mem:           db 'mem', 0
 cmd_ls:            db 'ls', 0
+cmd_heap:          db 'heap', 0
+cmd_ticks:         db 'ticks', 0
+cmd_uptime:        db 'uptime', 0
 cmd_echo:          db 'echo', 0
 cmd_echo_prefix:   db 'echo ', 0
+cmd_alloc_prefix:  db 'alloc ', 0
+cmd_free_prefix:   db 'free ', 0
+cmd_memtest:       db 'memtest', 0
 cmd_reboot:        db 'reboot', 0
 cmd_halt:          db 'halt', 0
 
@@ -757,5 +1974,21 @@ kbd_scancode_table:
     db 'z', 'x', 'c', 'v', 'b', 'n', 'm', ',', '.', '/', 0, '*', 0, ' '
     times (128 - ($ - kbd_scancode_table)) db 0
 
+kbd_scancode_shift_table:
+    db 0, 27, '!', '@', '#', '$', '%', '^', '&', '*', '(', ')', '_', '+', 8, 9
+    db 'Q', 'W', 'E', 'R', 'T', 'Y', 'U', 'I', 'O', 'P', 0, 0, 10, 0
+    db 'A', 'S', 'D', 'F', 'G', 'H', 'J', 'K', 'L', ':', '"', '~', 0, '|'
+    db 'Z', 'X', 'C', 'V', 'B', 'N', 'M', '<', '>', '?', 0, '*', 0, ' '
+    times (128 - ($ - kbd_scancode_shift_table)) db 0
+
 number_buffer:     times 16 db 0
+uptime_seconds:    dd 0
+uptime_tick_remainder: dd 0
+uptime_millis:     dd 0
 line_buffer:       times LINE_BUFFER_SIZE db 0
+
+align 4096
+page_directory:    times 1024 dd 0
+align 4096
+first_page_table:  times 1024 dd 0
+frame_bitmap:      times (FRAME_COUNT / 8) db 0

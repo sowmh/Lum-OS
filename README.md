@@ -13,9 +13,27 @@ Lum-OS is a small x86 operating system project that now boots end-to-end from a 
   - `clear`
   - `mem`
   - `ls`
+  - `heap`
+  - `ticks`
+  - `uptime`
+  - `alloc <bytes>`
+  - `free <addr>`
+  - `memtest`
   - `echo <text>`
   - `reboot`
   - `halt`
+- IDT initialized with exception handlers (0-31) and IRQ stubs (32-47).
+- PIC remap + PIT timer initialization + IRQ-driven keyboard input queue.
+- Paging enabled (`CR0.PG`) with an identity-mapped bootstrap virtual memory layout.
+- Basic memory protection hardening:
+  - null page unmapped
+  - stack guard page
+  - page-fault diagnostics include `CR2`
+- Heap manager upgraded from bump allocation to free-list allocation with:
+  - first-fit search
+  - block split
+  - coalescing on free
+  - high-water/statistics counters
 - Portable image creation without `mkfs.fat`, `mcopy`, or Open Watcom.
 - Automated smoke test that boots QEMU, talks to the shell over COM1, and checks core commands.
 
@@ -80,13 +98,15 @@ The current verified boot path is:
 
 ## Next ideas
 
-This repository now has a clean, working vertical slice. Good next steps would be:
+This repository now has a clean, working vertical slice with protected mode, interrupts, paging, and a reusable kernel heap.
 
-- IDT setup and exception handlers
-- timer and keyboard drivers beyond polling
-- richer file commands beyond root directory listing
-- allocator and paging
-- user-space program loading
+Good next steps would be:
+
+- multi-page virtual memory manager (page tables beyond first 4 MiB)
+- robust page-permission policy by region (code RO/RX, data RW, stricter guards)
+- physical memory map ingestion (E820) and frame allocator based on real RAM layout
+- kernel heap hardening (`kfree` validation, corruption checks, reusable bins/size classes)
+- syscall surface + user-space loader foundation
 
 ## License
 

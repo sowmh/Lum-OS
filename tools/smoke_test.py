@@ -112,11 +112,47 @@ def main() -> int:
         help_output = expect_command_output(
             sock,
             b"help\n",
-            [b"Commands: help, about, clear, mem, ls, echo <text>, reboot, halt", b"lum> "],
+            [b"Commands: help, about, clear, mem, ls, heap, ticks, uptime, alloc <bytes>, free <addr>, memtest, echo <text>, reboot, halt", b"lum> "],
             args.timeout,
         )
         print("[smoke] help command passed")
         print(help_output.decode("latin1", errors="replace"))
+
+        heap_output = expect_command_output(
+            sock,
+            b"heap\n",
+            [b"Heap start:", b"Heap used:", b"lum> "],
+            args.timeout,
+        )
+        print("[smoke] heap command passed")
+        print(heap_output.decode("latin1", errors="replace"))
+
+        alloc_output = expect_command_output(
+            sock,
+            b"alloc 256\n",
+            [b"Allocated at", b"size=256 bytes", b"lum> "],
+            args.timeout,
+        )
+        print("[smoke] alloc command passed")
+        print(alloc_output.decode("latin1", errors="replace"))
+
+        ticks_output = expect_command_output(
+            sock,
+            b"ticks\n",
+            [b"Timer ticks:", b"Approx uptime:", b"lum> "],
+            args.timeout,
+        )
+        print("[smoke] ticks command passed")
+        print(ticks_output.decode("latin1", errors="replace"))
+
+        uptime_output = expect_command_output(
+            sock,
+            b"uptime\n",
+            [b"Uptime exact:", b" s", b"lum> "],
+            args.timeout,
+        )
+        print("[smoke] uptime command passed")
+        print(uptime_output.decode("latin1", errors="replace"))
 
         mem_output = expect_command_output(
             sock,
