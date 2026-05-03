@@ -1,5 +1,6 @@
 from __future__ import annotations
 import argparse
+import re
 import socket
 import subprocess
 import sys
@@ -57,6 +58,12 @@ def expect_command_output(
 ) -> bytes:
     sock.sendall(command)
     return read_until(sock, expected_fragments, timeout)
+def extract_alloc_address(output: bytes) -> int:
+    match = re.search(rb"Allocated at (\d+)", output)
+    if match is None:
+        rendered = output.decode("latin1", errors="replace")
+        raise ValueError(f"could not parse allocation address from output:\n{rendered}")
+    return int(match.group(1))
 def main() -> int:
     args = parse_args()
     if not args.image.exists():
@@ -86,11 +93,43 @@ def main() -> int:
         help_output = expect_command_output(
             sock,
             b"help\n",
-            [b"Commands: help, about, clear, mem, ls, heap, ticks, uptime, alloc <bytes>, free <addr>, memtest, echo <text>, reboot, halt", b"lum> "],
+            [b"Commands: help, about, clear, mem, ls, files, heap, ticks, uptime, vmem, alloc <bytes>, free <addr>, memtest, echo <text>, cat <file>, reboot, halt", b"lum> "],
             args.timeout,
         )
         print("[smoke] help command passed")
         print(help_output.decode("latin1", errors="replace"))
+        about_output = expect_command_output(
+            sock,
+            b"about\n",
+            [b"PIC/PIT/keyboard interrupts", b"cached floppy files readable from the shell.", b"lum> "],
+            args.timeout,
+        )
+        print("[smoke] about command passed")
+        print(about_output.decode("latin1", errors="replace"))
+        vmem_output = expect_command_output(
+            sock,
+            b"vmem\n",
+            [b"VM pages present:", b"Frames reserved:", b"Readonly guard 0x1000: read-only", b"lum> "],
+            args.timeout,
+        )
+        print("[smoke] vmem command passed")
+        print(vmem_output.decode("latin1", errors="replace"))
+        files_output = expect_command_output(
+            sock,
+            b"files\n",
+            [b"Cached files:", b"README.TXT", b"STATUS.TXT", b"lum> "],
+            args.timeout,
+        )
+        print("[smoke] files command passed")
+        print(files_output.decode("latin1", errors="replace"))
+        cat_output = expect_command_output(
+            sock,
+            b"cat readme.txt\n",
+            [b"Lum-OS cached README", b"Try: files, cat README.TXT, cat STATUS.TXT", b"lum> "],
+            args.timeout,
+        )
+        print("[smoke] cat command passed")
+        print(cat_output.decode("latin1", errors="replace"))
         heap_output = expect_command_output(
             sock,
             b"heap\n",
@@ -101,12 +140,29 @@ def main() -> int:
         print(heap_output.decode("latin1", errors="replace"))
         alloc_output = expect_command_output(
             sock,
-            b"alloc 256\n",
+            b"alloc 0x100\n",
             [b"Allocated at", b"size=256 bytes", b"lum> "],
             args.timeout,
         )
         print("[smoke] alloc command passed")
         print(alloc_output.decode("latin1", errors="replace"))
+        alloc_address = extract_alloc_address(alloc_output)
+        free_output = expect_command_output(
+            sock,
+            f"free 0x{alloc_address:X}\n".encode("ascii"),
+            [b"Block released.", b"lum> "],
+            args.timeout,
+        )
+        print("[smoke] free command passed")
+        print(free_output.decode("latin1", errors="replace"))
+        memtest_output = expect_command_output(
+            sock,
+            b"memtest\n",
+            [b"Running memory stress test...", b"Memory stress test passed.", b"lum> "],
+            max(args.timeout, 30.0),
+        )
+        print("[smoke] memtest command passed")
+        print(memtest_output.decode("latin1", errors="replace"))
         ticks_output = expect_command_output(
             sock,
             b"ticks\n",
@@ -134,7 +190,7 @@ def main() -> int:
         ls_output = expect_command_output(
             sock,
             b"ls\n",
-            [b"Root directory:", b"STAGE2.BIN", b"KERNEL.BIN", b"lum> "],
+            [b"Root directory:", b"STAGE2.BIN", b"KERNEL.BIN", b"README.TXT", b"STATUS.TXT", b"lum> "],
             args.timeout,
         )
         print("[smoke] ls command passed")
@@ -145,6 +201,9 @@ def main() -> int:
             [b"smoke test", b"lum> "],
             args.timeout,
         )
+        if b"Unknown command" in echo_output:
+            rendered = echo_output.decode("latin1", errors="replace")
+            raise AssertionError(f"echo command regression detected:\n{rendered}")
         print("[smoke] echo command passed")
         print(echo_output.decode("latin1", errors="replace"))
         halt_output = expect_command_output(

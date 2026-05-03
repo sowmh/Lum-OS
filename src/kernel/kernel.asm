@@ -12,6 +12,8 @@ bits 32
 %define BOOTINFO_TOTAL_KB       10
 %define BOOTINFO_ROOTDIR_ENTRIES 14
 %define BOOTINFO_ROOTDIR_ADDR    16
+%define BOOTINFO_FILE_TABLE_ADDR 20
+%define BOOTINFO_FILE_COUNT      24
 %define LINE_BUFFER_SIZE        128
 %define KBD_QUEUE_SIZE           64
 %define TIMER_HZ                100
@@ -25,6 +27,8 @@ bits 32
 %define FRAME_COUNT         (MAX_PHYS_MEM / FRAME_SIZE)
 %define KERNEL_STACK_TOP    0x00110000
 %define KERNEL_STACK_GUARD  0x0010C000
+%define BOOTSTRAP_RESERVED_END (HEAP_START + HEAP_SIZE)
+%define FILE_CACHE_ENTRY_SIZE     24
 %macro INSTALL_ISR 2
     mov eax, %2
     mov ebx, %1
@@ -152,14 +156,35 @@ init_paging:
     ret
 init_frame_bitmap:
     push eax
+    push ebx
     push ecx
+    push edx
     push edi
     mov edi, frame_bitmap
     mov ecx, FRAME_COUNT / 8
     xor eax, eax
     rep stosb
+    mov dword [frame_reserved_count], 0
+    mov dword [frame_dynamic_count], 0
+    xor ecx, ecx
+.reserve_loop:
+    cmp ecx, BOOTSTRAP_RESERVED_END / FRAME_SIZE
+    jae .done
+    mov eax, ecx
+    shr eax, 3
+    movzx edx, byte [frame_bitmap + eax]
+    mov ebx, ecx
+    and ebx, 7
+    bts edx, ebx
+    mov [frame_bitmap + eax], dl
+    inc ecx
+    jmp .reserve_loop
+.done:
+    mov dword [frame_reserved_count], BOOTSTRAP_RESERVED_END / FRAME_SIZE
     pop edi
+    pop edx
     pop ecx
+    pop ebx
     pop eax
     ret
 setup_identity_paging:
@@ -401,6 +426,11 @@ dispatch_command:
     test eax, eax
     jnz .ls
     mov esi, line_buffer
+    mov edi, cmd_files
+    call command_equals
+    test eax, eax
+    jnz .files
+    mov esi, line_buffer
     mov edi, cmd_heap
     call command_equals
     test eax, eax
@@ -415,6 +445,11 @@ dispatch_command:
     call command_equals
     test eax, eax
     jnz .uptime
+    mov esi, line_buffer
+    mov edi, cmd_vmem
+    call command_equals
+    test eax, eax
+    jnz .vmem
     mov esi, line_buffer
     mov edi, cmd_memtest
     call command_equals
@@ -436,10 +471,20 @@ dispatch_command:
     test eax, eax
     jnz .echo_empty
     mov esi, line_buffer
+    mov edi, cmd_cat
+    call command_equals
+    test eax, eax
+    jnz .cat_usage
+    mov esi, line_buffer
     mov edi, cmd_echo_prefix
     call starts_with
     test eax, eax
     jnz .echo_with_text
+    mov esi, line_buffer
+    mov edi, cmd_cat_prefix
+    call starts_with
+    test eax, eax
+    jnz .cat
     mov esi, line_buffer
     mov edi, cmd_alloc_prefix
     call starts_with
@@ -475,6 +520,9 @@ dispatch_command:
 .ls:
     call print_root_directory
     jmp .done
+.files:
+    call print_cached_files_report
+    jmp .done
 .heap:
     call print_heap_report
     jmp .done
@@ -484,6 +532,9 @@ dispatch_command:
 .uptime:
     call print_uptime_report
     jmp .done
+.vmem:
+    call print_vmem_report
+    jmp .done
 .memtest:
     call run_memory_stress_test
     jmp .done
@@ -491,11 +542,19 @@ dispatch_command:
     mov al, 10
     call console_putc
     jmp .done
+.cat_usage:
+    mov esi, cat_usage_text
+    call console_write
+    jmp .done
 .echo_with_text:
     mov esi, line_buffer + 5
     call console_write
     mov al, 10
     call console_putc
+    jmp .done
+.cat:
+    mov esi, line_buffer + 4
+    call print_cached_file_contents
     jmp .done
 .alloc:
     mov esi, line_buffer + 6
@@ -640,6 +699,111 @@ print_root_directory:
     call console_write
 .done:
     ret
+print_cached_files_report:
+    cmp dword [BOOT_INFO_ADDR], BOOTINFO_MAGIC
+    jne .missing
+    mov ecx, [BOOT_INFO_ADDR + BOOTINFO_FILE_COUNT]
+    test ecx, ecx
+    jz .empty
+    mov ebx, [BOOT_INFO_ADDR + BOOTINFO_FILE_TABLE_ADDR]
+    mov esi, files_header
+    call console_write
+.next:
+    push ecx
+    push ebx
+    mov esi, ebx
+    call console_write
+    mov esi, ls_spacing
+    call console_write
+    mov eax, [ebx + 20]
+    call print_uint32
+    mov esi, bytes_suffix
+    call console_write
+    pop ebx
+    pop ecx
+    add ebx, FILE_CACHE_ENTRY_SIZE
+    dec ecx
+    jnz .next
+    ret
+.empty:
+    mov esi, files_empty
+    call console_write
+    ret
+.missing:
+    mov esi, files_missing
+    call console_write
+    ret
+print_cached_file_contents:
+    push eax
+    push ebx
+    push ecx
+    push edx
+    push esi
+    push edi
+    mov edi, esi
+    call find_cached_file
+    test eax, eax
+    jz .missing
+    mov ebx, eax
+    mov ecx, edx
+    test ecx, ecx
+    jz .done
+    mov esi, eax
+    call console_write_bytes
+    cmp byte [ebx + edx - 1], 10
+    je .done
+    mov al, 10
+    call console_putc
+    jmp .done
+.missing:
+    mov esi, cat_missing_prefix
+    call console_write
+    mov esi, edi
+    call console_write
+    mov al, 10
+    call console_putc
+.done:
+    pop edi
+    pop esi
+    pop edx
+    pop ecx
+    pop ebx
+    pop eax
+    ret
+find_cached_file:
+    push ebx
+    push ecx
+    push esi
+    push edi
+    cmp dword [BOOT_INFO_ADDR], BOOTINFO_MAGIC
+    jne .fail
+    mov ecx, [BOOT_INFO_ADDR + BOOTINFO_FILE_COUNT]
+    test ecx, ecx
+    jz .fail
+    mov ebx, [BOOT_INFO_ADDR + BOOTINFO_FILE_TABLE_ADDR]
+.search:
+    push esi
+    mov edi, ebx
+    call string_equals_ci
+    pop esi
+    test eax, eax
+    jnz .found
+    add ebx, FILE_CACHE_ENTRY_SIZE
+    dec ecx
+    jnz .search
+.fail:
+    xor eax, eax
+    xor edx, edx
+    jmp .out
+.found:
+    mov eax, [ebx + 16]
+    mov edx, [ebx + 20]
+.out:
+    pop edi
+    pop esi
+    pop ecx
+    pop ebx
+    ret
 print_timer_report:
     mov esi, ticks_prefix
     call console_write
@@ -655,6 +819,91 @@ print_timer_report:
     div ebx
     call print_uint32
     mov esi, seconds_suffix
+    call console_write
+    ret
+print_vmem_report:
+    push eax
+    push ebx
+    push ecx
+    push edx
+    mov esi, vmem_present_prefix
+    call console_write
+    xor ebx, ebx
+    xor edx, edx
+    xor ecx, ecx
+.count_loop:
+    mov eax, [first_page_table + ecx * 4]
+    test eax, 1
+    jz .next
+    inc ebx
+    test eax, 2
+    jz .next
+    inc edx
+.next:
+    inc ecx
+    cmp ecx, 1024
+    jb .count_loop
+    mov eax, ebx
+    call print_uint32
+    mov esi, vmem_total_suffix
+    call console_write
+    mov esi, vmem_writable_prefix
+    call console_write
+    mov eax, edx
+    call print_uint32
+    mov esi, vmem_total_suffix
+    call console_write
+    mov esi, frames_reserved_prefix
+    call console_write
+    mov eax, [frame_reserved_count]
+    call print_uint32
+    mov esi, newline_suffix
+    call console_write
+    mov esi, frames_runtime_prefix
+    call console_write
+    mov eax, [frame_dynamic_count]
+    call print_uint32
+    mov esi, newline_suffix
+    call console_write
+    mov esi, frames_free_prefix
+    call console_write
+    mov eax, FRAME_COUNT
+    sub eax, [frame_reserved_count]
+    sub eax, [frame_dynamic_count]
+    call print_uint32
+    mov esi, newline_suffix
+    call console_write
+    mov esi, null_page_prefix
+    call console_write
+    mov eax, [first_page_table + 0]
+    call print_page_state
+    mov esi, stack_guard_prefix
+    call console_write
+    mov eax, [first_page_table + ((KERNEL_STACK_GUARD >> 12) * 4)]
+    call print_page_state
+    mov esi, readonly_guard_prefix
+    call console_write
+    mov eax, [first_page_table + ((0x1000 >> 12) * 4)]
+    call print_page_state
+    pop edx
+    pop ecx
+    pop ebx
+    pop eax
+    ret
+print_page_state:
+    test eax, 1
+    jz .unmapped
+    test eax, 2
+    jz .readonly
+    mov esi, page_rw_text
+    call console_write
+    ret
+.readonly:
+    mov esi, page_ro_text
+    call console_write
+    ret
+.unmapped:
+    mov esi, page_unmapped_text
     call console_write
     ret
 init_memory:
@@ -697,6 +946,7 @@ kmalloc_align16:
     sub ecx, esi
     cmp ecx, HEAP_HDR_SIZE + 16
     jb .use_whole
+    mov [ebx + 0], esi
     lea eax, [ebx + HEAP_HDR_SIZE + esi]    
     mov [eax + 0], ecx
     sub dword [eax + 0], HEAP_HDR_SIZE
@@ -874,7 +1124,7 @@ alloc_frame:
     jae .fail
     mov ebx, ecx
     shr ebx, 3
-    mov dl, [frame_bitmap + ebx]
+    movzx edx, byte [frame_bitmap + ebx]
     mov ebx, ecx
     and ebx, 7
     bt edx, ebx
@@ -883,6 +1133,7 @@ alloc_frame:
     mov ebx, ecx
     shr ebx, 3
     mov [frame_bitmap + ebx], dl
+    inc dword [frame_dynamic_count]
     mov eax, ecx
     shl eax, 12
     jmp .out
@@ -899,19 +1150,26 @@ alloc_frame:
 free_frame:
     push ebx
     push ecx
+    cmp eax, BOOTSTRAP_RESERVED_END
+    jb .out
     mov ecx, eax
     shr ecx, 12
     cmp ecx, FRAME_COUNT
     jae .out
     mov ebx, ecx
     shr ebx, 3
-    mov al, [frame_bitmap + ebx]
+    movzx eax, byte [frame_bitmap + ebx]
     mov ebx, ecx
     and ebx, 7
+    bt eax, ebx
+    jnc .out
     btr eax, ebx
     mov ebx, ecx
     shr ebx, 3
     mov [frame_bitmap + ebx], al
+    cmp dword [frame_dynamic_count], 0
+    je .out
+    dec dword [frame_dynamic_count]
 .out:
     pop ecx
     pop ebx
@@ -1089,8 +1347,28 @@ run_memory_stress_test:
 parse_uint32:
     xor eax, eax
     xor edx, edx
+ .skip_space:
+    mov bl, [esi]
+    cmp bl, ' '
+    je .advance_space
+    cmp bl, 9
+    je .advance_space
+    jmp .prefix_check
+.advance_space:
+    inc esi
+    jmp .skip_space
+.prefix_check:
+    mov bl, [esi]
+    cmp bl, '0'
+    jne .decimal
+    mov bl, [esi + 1]
+    cmp bl, 'x'
+    je .hex_start
+    cmp bl, 'X'
+    je .hex_start
+.decimal:
     xor ecx, ecx
-.loop:
+.decimal_loop:
     mov bl, [esi]
     test bl, bl
     jz .done
@@ -1104,7 +1382,43 @@ parse_uint32:
     add eax, ebx
     inc esi
     inc ecx
-    jmp .loop
+    jmp .decimal_loop
+.hex_start:
+    add esi, 2
+    xor ecx, ecx
+.hex_loop:
+    mov bl, [esi]
+    test bl, bl
+    jz .done
+    cmp bl, '0'
+    jb .fail
+    cmp bl, '9'
+    jbe .hex_digit
+    cmp bl, 'A'
+    jb .hex_lower
+    cmp bl, 'F'
+    jbe .hex_upper
+.hex_lower:
+    cmp bl, 'a'
+    jb .fail
+    cmp bl, 'f'
+    ja .fail
+    movzx ebx, bl
+    sub ebx, 'a' - 10
+    jmp .hex_apply
+.hex_upper:
+    movzx ebx, bl
+    sub ebx, 'A' - 10
+    jmp .hex_apply
+.hex_digit:
+    movzx ebx, bl
+    sub ebx, '0'
+.hex_apply:
+    shl eax, 4
+    add eax, ebx
+    inc esi
+    inc ecx
+    jmp .hex_loop
 .done:
     test ecx, ecx
     jz .fail
@@ -1113,6 +1427,56 @@ parse_uint32:
 .fail:
     xor eax, eax
     xor edx, edx
+    ret
+string_equals_ci:
+    push ebx
+    push esi
+    push edi
+.compare:
+    mov al, [esi]
+    mov bl, [edi]
+    cmp al, 'a'
+    jb .query_folded
+    cmp al, 'z'
+    ja .query_folded
+    sub al, 32
+.query_folded:
+    cmp bl, 'a'
+    jb .entry_folded
+    cmp bl, 'z'
+    ja .entry_folded
+    sub bl, 32
+.entry_folded:
+    cmp al, bl
+    jne .no_match
+    test al, al
+    je .match
+    inc esi
+    inc edi
+    jmp .compare
+.match:
+    mov eax, 1
+    jmp .done
+.no_match:
+    xor eax, eax
+.done:
+    pop edi
+    pop esi
+    pop ebx
+    ret
+console_write_bytes:
+    push eax
+    push ecx
+.loop:
+    test ecx, ecx
+    jz .done
+    lodsb
+    call console_putc
+    dec ecx
+    jmp .loop
+.done:
+    pop ecx
+    pop eax
     ret
 print_uptime_report:
     mov eax, [timer_ticks]
@@ -1195,7 +1559,9 @@ read_line:
     mov edi, line_buffer
     xor ecx, ecx
 .read_char:
+    push ecx
     call read_input_char
+    pop ecx
     cmp al, 13
     je .finish
     cmp al, 10
@@ -1208,13 +1574,17 @@ read_line:
     jae .read_char
     mov [edi + ecx], al
     inc ecx
+    push ecx
     call console_putc
+    pop ecx
     jmp .read_char
 .backspace:
     test ecx, ecx
     jz .read_char
     dec ecx
+    push ecx
     call console_backspace
+    pop ecx
     jmp .read_char
 .finish:
     mov byte [edi + ecx], 0
@@ -1599,6 +1969,8 @@ last_alloc_size:   dd 0
 heap_alloc_count:  dd 0
 heap_free_count:   dd 0
 heap_high_water:   dd 0
+frame_reserved_count: dd 0
+frame_dynamic_count: dd 0
 kbd_head:          db 0
 kbd_tail:          db 0
 kbd_shift:         db 0
@@ -1621,11 +1993,13 @@ exception_halt_suffix: db ' System halted.', 10, 0
 readonly_page:     db 'Lum-OS read-only guard page', 0
 prompt:            db 'lum> ', 0
 unknown_prefix:    db 'Unknown command: ', 0
-help_text:         db 'Commands: help, about, clear, mem, ls, heap, ticks, uptime, alloc <bytes>, free <addr>, memtest, echo <text>, reboot, halt', 10, 0
+help_text:         db 'Commands: help, about, clear, mem, ls, files, heap, ticks, uptime, vmem, alloc <bytes>, free <addr>, memtest, echo <text>, cat <file>, reboot, halt', 10, 0
 alloc_usage_text:  db 'Usage: alloc <bytes>', 10, 0
 alloc_failed_text: db 'Allocation failed: out of heap memory.', 10, 0
 alloc_ok_prefix:   db 'Allocated at ', 0
 alloc_ok_mid:      db ' size=', 0
+cat_usage_text:    db 'Usage: cat <file>', 10, 0
+cat_missing_prefix: db 'Cached file not found: ', 0
 free_usage_text:   db 'Usage: free <addr>', 10, 0
 free_failed_text:  db 'Free failed: invalid or already freed block.', 10, 0
 free_ok_text:      db 'Block released.', 10, 0
@@ -1637,7 +2011,7 @@ ticks_suffix:      db ' ticks', 10, 0
 uptime_prefix:     db 'Approx uptime: ', 0
 uptime_detail_prefix: db 'Uptime exact: ', 0
 seconds_suffix:    db ' s', 10, 0
-about_text:        db 'Lum-OS is a tiny from-scratch x86 OS demo with a FAT12 stage1/stage2 loader,', 10, 'a protected-mode kernel, and a small interactive shell with root directory listing.', 10, 0
+about_text:        db 'Lum-OS is a tiny x86 OS demo with a FAT12 stage1/stage2 loader, PIC/PIT/keyboard interrupts,', 10, 'paging with guard pages, a heap allocator, and cached floppy files readable from the shell.', 10, 0
 halt_message:      db 'CPU halted.', 10, 0
 reboot_message:    db 'Rebooting system...', 10, 0
 mem_conv_prefix:   db 'Conventional memory: ', 0
@@ -1646,6 +2020,9 @@ mem_total_prefix:  db 'Approx total memory: ', 0
 mem_missing:       db 'Memory info unavailable.', 10, 0
 kb_suffix:         db ' KB', 10, 0
 ls_header:         db 'Root directory:', 10, 0
+files_header:      db 'Cached files:', 10, 0
+files_empty:       db 'No cached files available.', 10, 0
+files_missing:     db 'Cached file table unavailable.', 10, 0
 ls_spacing:        db '  ', 0
 bytes_suffix:      db ' bytes', 10, 0
 heap_start_prefix: db 'Heap start: ', 0
@@ -1663,10 +2040,14 @@ cmd_about:         db 'about', 0
 cmd_clear:         db 'clear', 0
 cmd_mem:           db 'mem', 0
 cmd_ls:            db 'ls', 0
+cmd_files:         db 'files', 0
 cmd_heap:          db 'heap', 0
 cmd_ticks:         db 'ticks', 0
 cmd_uptime:        db 'uptime', 0
+cmd_vmem:          db 'vmem', 0
+cmd_cat:           db 'cat', 0
 cmd_echo:          db 'echo', 0
+cmd_cat_prefix:    db 'cat ', 0
 cmd_echo_prefix:   db 'echo ', 0
 cmd_alloc_prefix:  db 'alloc ', 0
 cmd_free_prefix:   db 'free ', 0
@@ -1689,6 +2070,18 @@ number_buffer:     times 16 db 0
 uptime_seconds:    dd 0
 uptime_tick_remainder: dd 0
 uptime_millis:     dd 0
+vmem_present_prefix: db 'VM pages present: ', 0
+vmem_writable_prefix: db 'VM pages writable: ', 0
+vmem_total_suffix: db '/1024', 10, 0
+frames_reserved_prefix: db 'Frames reserved: ', 0
+frames_runtime_prefix: db 'Frames runtime: ', 0
+frames_free_prefix: db 'Frames free: ', 0
+null_page_prefix:  db 'Null page: ', 0
+stack_guard_prefix: db 'Stack guard: ', 0
+readonly_guard_prefix: db 'Readonly guard 0x1000: ', 0
+page_unmapped_text: db 'unmapped', 10, 0
+page_ro_text:      db 'read-only', 10, 0
+page_rw_text:      db 'read/write', 10, 0
 line_buffer:       times LINE_BUFFER_SIZE db 0
 align 4096
 page_directory:    times 1024 dd 0

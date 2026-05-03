@@ -1,16 +1,10 @@
 # Lum-OS Developer Guide
 
-## Active build path
+## Active Build Path
 
-The supported build path is the NASM-based one driven by `tools/build.py`.
+The supported build path is the top-level NASM-based one driven by `tools/build.py`.
 
-Requirements:
-
-- Python 3
-- NASM
-- QEMU
-
-Build targets:
+Main targets:
 
 ```bash
 python tools/build.py stage1
@@ -23,61 +17,90 @@ python tools/build.py smoke-test
 python tools/build.py clean
 ```
 
-The top-level `Makefile` is only a wrapper around these commands.
+The top-level `Makefile` is only a wrapper around those commands.
 
-## Source map
+## Build Inputs
 
 - `src/bootloader/stage1/boot.asm`
-  - FAT12-aware boot sector
-  - loads `STAGE2.BIN`
+  - BIOS boot sector
+  - FAT12 root scan for `STAGE2.BIN`
 - `src/bootloader/stage2/stage2.asm`
-  - serial console setup
-  - kernel loading from FAT12
-  - boot info handoff at `0x9000`
-  - A20 enable and protected-mode jump
+  - serial bring-up
+  - boot info handoff
+  - FAT12 kernel loading
+  - boot-time cache for extra root files
+  - protected-mode jump
 - `src/kernel/kernel.asm`
-  - VGA + serial console
-  - line input from serial and keyboard polling
-  - command shell
+  - VGA and serial console
+  - IDT, PIC, PIT, keyboard IRQ queue
+  - paging bootstrap
+  - heap allocator
+  - shell commands
 - `tools/build_image.py`
-  - assembles a FAT12 floppy image in pure Python
+  - pure-Python FAT12 floppy generator
+- `tools/smoke_test.py`
+  - QEMU serial integration test
 
-## Notes on legacy files
+## Testing Strategy
 
-There are older C and Open Watcom experiments still present under `src/bootloader/stage2/` and `src/kernel/`.
-
-They are not part of the current verified boot path.
-
-## Testing
-
-Use headless mode for the quickest verification:
+Fast manual check:
 
 ```bash
 python tools/build.py run-headless
 ```
 
-You should see:
-
-- stage 2 serial messages
-- the kernel banner
-- the `lum>` prompt
-
-Use the automated smoke test when you want a repeatable boot-to-shell check:
+Automated verification:
 
 ```bash
 python tools/build.py smoke-test
 ```
 
-The smoke test boots QEMU with a TCP-backed serial port, waits for the prompt, and verifies `help`, `mem`, `ls`, `echo`, and `halt`.
+The smoke test currently covers:
 
-You can also pipe commands into QEMU for smoke tests:
+- boot banner
+- `help`
+- `about`
+- `vmem`
+- `files`
+- `cat`
+- `heap`
+- `alloc`
+- `free`
+- `memtest`
+- `ticks`
+- `uptime`
+- `mem`
+- `ls`
+- `echo`
+- `halt`
 
-```bash
-printf "help\nmem\nhalt\n" | qemu-system-i386 -drive file=build/main_floppy.img,format=raw,if=floppy -serial stdio -display none -no-reboot -no-shutdown
-```
+## Memory and Paging Notes
 
-## Extension points
+- Boot info lives at physical `0x00009000`
+- The kernel binary is loaded at physical `0x00010000`
+- The first 4 MiB are identity-mapped during bootstrap
+- The null page is intentionally unmapped
+- The stack guard page is intentionally unmapped
+- The page at `0x1000` is intentionally read-only
+- The heap starts at `0x00120000` and spans 1 MiB
+- The frame bitmap now reserves bootstrap-used memory before any runtime allocation
 
-- Add new shell commands in `src/kernel/kernel.asm`
-- Extend the boot info structure at `0x9000`
-- Replace polling with proper interrupt-driven input once an IDT exists
+## Shell Extension Points
+
+Most shell behavior lives in `src/kernel/kernel.asm`.
+
+Typical places to extend:
+
+- `dispatch_command` for new commands
+- `print_*_report` helpers for diagnostics
+- memory helpers such as `kmalloc_align16`, `kfree`, `alloc_frame`, and `free_frame`
+
+## Reference Material
+
+The repository still contains older or duplicated material that is not part of the active smoke-tested path:
+
+- `src/kernel/kernel.c`
+- legacy C/Open Watcom stage 2 files
+- the nested `Lum-OS/` directory
+
+Treat them as reference or archival context unless you intentionally choose to revive them.

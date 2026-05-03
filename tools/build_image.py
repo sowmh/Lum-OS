@@ -11,6 +11,18 @@ SECTORS_PER_FAT = 9
 ROOT_DIR_ENTRIES = 224
 ROOT_DIR_SECTORS = math.ceil(ROOT_DIR_ENTRIES * 32 / BYTES_PER_SECTOR)
 DATA_START_SECTOR = RESERVED_SECTORS + (FAT_COUNT * SECTORS_PER_FAT) + ROOT_DIR_SECTORS
+EXTRA_TEXT_FILES = {
+    "README.TXT": (
+        "Lum-OS cached README\n"
+        "This text file is loaded by stage2 into RAM so the protected-mode shell can read it.\n"
+        "Try: files, cat README.TXT, cat STATUS.TXT\n"
+    ).encode("ascii"),
+    "STATUS.TXT": (
+        "Lum-OS status\n"
+        "Boot, interrupts, paging, heap, and shell diagnostics are online.\n"
+        "Next big areas are richer filesystem support, user-space foundations, and scheduling.\n"
+    ).encode("ascii"),
+}
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Create a bootable FAT12 floppy image for Lum-OS.")
     parser.add_argument("--boot", required=True, type=Path, help="512-byte stage1 boot sector")
@@ -81,6 +93,8 @@ def build_image(boot_sector: bytes, stage2: bytes, kernel: bytes) -> bytearray:
     next_cluster = 2
     next_cluster = allocate_file(image, fat, directory, 0, "STAGE2.BIN", stage2, next_cluster)
     next_cluster = allocate_file(image, fat, directory, 1, "KERNEL.BIN", kernel, next_cluster)
+    for slot, (name, data) in enumerate(EXTRA_TEXT_FILES.items(), start=2):
+        next_cluster = allocate_file(image, fat, directory, slot, name, data, next_cluster)
     fat_area_offset = RESERVED_SECTORS * BYTES_PER_SECTOR
     for copy_index in range(FAT_COUNT):
         start = fat_area_offset + (copy_index * len(fat))

@@ -8,13 +8,13 @@ Build the floppy image:
 python tools/build.py image
 ```
 
-Run it with a QEMU window:
+Run with a QEMU window:
 
 ```bash
 python tools/build.py run
 ```
 
-Run it headless through the serial console:
+Run headless through the serial console:
 
 ```bash
 python tools/build.py run-headless
@@ -26,43 +26,70 @@ Run the automated smoke test:
 python tools/build.py smoke-test
 ```
 
-Headless mode is useful for debugging because stage 2 and the kernel both print to COM1.
-The smoke test is useful when you want an end-to-end check without manually typing into QEMU.
+Headless mode is the fastest way to interact with the shell because COM1 is connected directly to your terminal.
 
-## Input methods
+## Input Methods
 
-The shell accepts input from:
+You can type into Lum-OS through:
 
 - the QEMU keyboard
 - the serial console in headless mode
 
-## Available commands
+Keyboard input is queued through IRQ1, while serial input is polled from COM1.
 
-- `help` shows the command list
-- `about` prints a short project summary
-- `clear` redraws the screen and banner
-- `mem` shows the memory values collected by stage 2
-- `ls` lists the FAT12 root directory entries that stage 2 cached during boot
-- `echo <text>` prints text back
-- `reboot` requests a keyboard-controller reset
+## Available Commands
+
+- `help` prints the command list
+- `about` prints a compact project summary
+- `clear` clears the screen and redraws the banner
+- `mem` prints memory values gathered during boot plus heap stats
+- `ls` lists cached FAT12 root directory entries
+- `files` lists the boot-time cached readable files
+- `heap` prints heap usage and allocation counters
+- `ticks` prints timer tick counters
+- `uptime` prints approximate uptime in seconds
+- `vmem` prints bootstrap paging and frame allocator status
+- `alloc <bytes>` allocates heap memory
+- `free <addr>` frees a previously allocated block
+- `memtest` runs a heap stress test
+- `echo <text>` writes text back to the console
+- `cat <file>` prints a boot-time cached file such as `README.TXT`
+- `reboot` asks the keyboard controller to reset the machine
 - `halt` stops the CPU
 
-## Example session
+`alloc` and `free` accept decimal and hexadecimal values.
+
+Examples:
+
+```text
+lum> alloc 256
+lum> alloc 0x100
+lum> free 1179664
+lum> free 0x120010
+```
+
+## Example Session
 
 ```text
 lum> help
-lum> mem
-lum> echo hello
+lum> vmem
+lum> files
+lum> cat README.TXT
+lum> heap
+lum> alloc 0x100
+lum> free 0x120010
 lum> halt
 ```
 
-## Current scope
+## Scope
 
-Lum-OS is a working boot-to-shell demo, not yet a full general-purpose operating system.
+Lum-OS is currently a working educational boot-to-shell kernel, not a full general-purpose operating system.
 
-Today it focuses on:
+Its present focus is:
 
 - BIOS boot
 - FAT12 loading
 - protected-mode entry
-- simple console interaction
+- basic interrupt handling
+- paging and heap diagnostics
+- simple shell interaction
