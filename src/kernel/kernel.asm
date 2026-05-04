@@ -493,6 +493,16 @@ dispatch_command:
     test eax, eax
     jnz .slots
     mov esi, line_buffer
+    mov edi, cmd_paint
+    call command_equals
+    test eax, eax
+    jnz .paint
+    mov esi, line_buffer
+    mov edi, cmd_editor
+    call command_equals
+    test eax, eax
+    jnz .editor
+    mov esi, line_buffer
     mov edi, cmd_memtest
     call command_equals
     test eax, eax
@@ -596,6 +606,12 @@ dispatch_command:
     jmp .done
 .slots:
     call run_slots_game
+    jmp .done
+.paint:
+    call run_paint_app
+    jmp .done
+.editor:
+    call run_editor_app
     jmp .done
 .memtest:
     call run_memory_stress_test
@@ -967,6 +983,263 @@ run_slots_game:
     pop ecx
     pop ebx
     pop eax
+    ret
+run_paint_app:
+    push eax
+    push ebx
+    push ecx
+    push edx
+    push esi
+    push edi
+    mov byte [text_color], COLOR_PANEL
+    mov esi, paint_top
+    call console_write
+    mov esi, paint_title
+    call console_write
+    mov esi, paint_bottom
+    call console_write
+    call paint_clear_buffer
+    call paint_show_buffer
+.paint_loop:
+    mov byte [text_color], COLOR_PROMPT
+    mov esi, paint_prompt
+    call console_write
+    call set_body_color
+    call read_line
+    mov esi, line_buffer
+    mov edi, cmd_paint_exit
+    call command_equals
+    test eax, eax
+    jnz .paint_done
+    mov esi, line_buffer
+    mov edi, cmd_paint_show
+    call command_equals
+    test eax, eax
+    jnz .paint_show
+    mov esi, line_buffer
+    mov edi, cmd_paint_clear
+    call command_equals
+    test eax, eax
+    jnz .paint_clear
+    mov esi, line_buffer
+    mov edi, cmd_paint_draw_prefix
+    call starts_with
+    test eax, eax
+    jnz .paint_draw
+    mov byte [text_color], COLOR_ERROR
+    mov esi, paint_usage_text
+    call console_write
+    jmp .paint_loop
+.paint_draw:
+    mov esi, line_buffer + 5
+    call parse_uint32
+    test edx, edx
+    jz .paint_invalid
+    mov ebx, eax
+    mov esi, line_buffer + 5
+    ; skip first number and whitespace
+.paint_skip_x:
+    mov al, [esi]
+    cmp al, ' '
+    je .paint_skip_space1
+    cmp al, 0
+    je .paint_invalid
+    inc esi
+    jmp .paint_skip_x
+.paint_skip_space1:
+    inc esi
+    mov al, [esi]
+    cmp al, ' '
+    je .paint_skip_space1
+    call parse_uint32
+    test edx, edx
+    jz .paint_invalid
+    mov ecx, eax
+    cmp ebx, 39
+    ja .paint_invalid
+    cmp ecx, 15
+    ja .paint_invalid
+    mov edx, ecx
+    imul edx, 40
+    add edx, ebx
+    mov al, '*'
+    mov [paint_buffer + edx], al
+    mov byte [text_color], COLOR_SUCCESS
+    mov esi, paint_drawn_text
+    call console_write
+    jmp .paint_loop
+.paint_invalid:
+    mov byte [text_color], COLOR_ERROR
+    mov esi, paint_invalid_text
+    call console_write
+    jmp .paint_loop
+.paint_show:
+    call paint_show_buffer
+    jmp .paint_loop
+.paint_clear:
+    call paint_clear_buffer
+    mov byte [text_color], COLOR_SUCCESS
+    mov esi, paint_cleared_text
+    call console_write
+    jmp .paint_loop
+.paint_done:
+    mov byte [text_color], COLOR_SUBTLE
+    mov esi, paint_exit_text
+    call console_write
+    call set_body_color
+    pop edi
+    pop esi
+    pop edx
+    pop ecx
+    pop ebx
+    pop eax
+    ret
+paint_clear_buffer:
+    push eax
+    push ecx
+    push edi
+    mov edi, paint_buffer
+    mov al, ' '
+    mov ecx, 640
+    rep stosb
+    pop edi
+    pop ecx
+    pop eax
+    ret
+paint_show_buffer:
+    push eax
+    push ecx
+    push edx
+    push esi
+    mov esi, paint_buffer
+    mov ecx, 16
+.paint_row:
+    mov edx, 40
+.paint_col:
+    mov al, [esi]
+    call console_putc
+    inc esi
+    dec edx
+    jnz .paint_col
+    mov al, 10
+    call console_putc
+    dec ecx
+    jnz .paint_row
+    pop esi
+    pop edx
+    pop ecx
+    pop eax
+    ret
+run_editor_app:
+    push eax
+    push ebx
+    push ecx
+    push edx
+    push esi
+    push edi
+    mov byte [text_color], COLOR_PANEL
+    mov esi, editor_top
+    call console_write
+    mov esi, editor_title
+    call console_write
+    mov esi, editor_bottom
+    call console_write
+    mov dword [editor_length], 0
+.editor_loop:
+    mov byte [text_color], COLOR_PROMPT
+    mov esi, editor_prompt
+    call console_write
+    call set_body_color
+    call read_line
+    mov esi, line_buffer
+    mov edi, cmd_editor_exit
+    call command_equals
+    test eax, eax
+    jnz .editor_done
+    mov esi, line_buffer
+    mov edi, cmd_editor_show
+    call command_equals
+    test eax, eax
+    jnz .editor_show
+    mov esi, line_buffer
+    mov edi, cmd_editor_clear
+    call command_equals
+    test eax, eax
+    jnz .editor_clear
+    mov esi, line_buffer
+    call string_length
+    mov ebx, eax
+    mov eax, [editor_length]
+    add eax, ebx
+    cmp eax, 2047
+    ja .editor_full
+    mov edx, [editor_length]
+    lea edi, [editor_buffer + edx]
+    mov ecx, ebx
+    mov esi, line_buffer
+    call safe_memcpy
+    add dword [editor_length], ebx
+    mov eax, [editor_length]
+    lea edi, [editor_buffer + eax]
+    mov byte [edi], 10
+    inc dword [editor_length]
+    mov byte [text_color], COLOR_SUCCESS
+    mov esi, editor_append_text
+    call console_write
+    jmp .editor_loop
+.editor_full:
+    mov byte [text_color], COLOR_ERROR
+    mov esi, editor_full_text
+    call console_write
+    jmp .editor_loop
+.editor_show:
+    mov eax, [editor_length]
+    test eax, eax
+    jz .editor_empty
+    mov esi, editor_buffer
+    mov ecx, eax
+    call console_write_bytes
+    mov al, 10
+    call console_putc
+    jmp .editor_loop
+.editor_empty:
+    mov byte [text_color], COLOR_SUBTLE
+    mov esi, editor_empty_text
+    call console_write
+    jmp .editor_loop
+.editor_clear:
+    mov dword [editor_length], 0
+    mov byte [text_color], COLOR_SUCCESS
+    mov esi, editor_cleared_text
+    call console_write
+    jmp .editor_loop
+.editor_done:
+    mov byte [text_color], COLOR_SUBTLE
+    mov esi, editor_exit_text
+    call console_write
+    call set_body_color
+    pop edi
+    pop esi
+    pop edx
+    pop ecx
+    pop ebx
+    pop eax
+    ret
+string_length:
+    push ecx
+    push esi
+    xor ecx, ecx
+.strlen_loop:
+    mov al, [esi]
+    cmp al, 0
+    je .strlen_done
+    inc ecx
+    inc esi
+    jmp .strlen_loop
+.strlen_done:
+    mov eax, ecx
+    pop esi
+    pop ecx
     ret
 run_search:
     push eax
@@ -2780,7 +3053,8 @@ last_make_scancode: db 0
 last_make_tick:    dd 0
 kbd_queue:         times KBD_QUEUE_SIZE db 0
 banner_top:        db '==============================================================', 10, 0
-banner_mid:        db ' Lum-OS kernel online (32-bit protected mode)', 10, 0
+banner_title:      db 'Lum-OS kernel online (32-bit protected mode)', 10, 0
+banner_mid:        db ' Protected mode shell with VGA, serial, IRQ keyboard, paging, heap.', 10, 0
 banner_bottom:     db '==============================================================', 10, 0
 boot_ok_message:   db '[ok] Boot path complete: FAT12 -> stage2 -> protected mode -> kernel', 10, 0
 shell_hint:        db 'Type help. Input works from the QEMU keyboard or the serial console.', 10, 10, 0
@@ -2792,12 +3066,117 @@ exception_halt_suffix: db ' System halted.', 10, 0
 readonly_page:     db 'Lum-OS read-only guard page', 0
 prompt:            db 'lum> ', 0
 unknown_prefix:    db 'Unknown command: ', 0
-help_text:         db 'Commands: help, about, clear, mem, ls, files, heap, ticks, uptime, vmem, alloc <bytes>, free <addr>, memtest, echo <text>, cat <file>, reboot, halt', 10, 0
+help_text:         db 'Commands: help, about, clear, mem, ls, files, heap, ticks, uptime, vmem, alloc <bytes>, free <addr>, memtest, echo <text>, cat <file>, games, search <text>, paint, editor, reboot, halt', 10, 0
+help_top:          db '=================== HELP ===================', 10, 0
+help_title:        db 'Available shell commands and categories', 10, 0
+help_bottom:       db '============================================', 10, 0
+help_core_line:    db ' core: help, about, clear, mem, ls, files, heap, ticks, uptime, vmem', 10, 0
+help_inspect_line: db ' inspect: alloc <bytes>, free <addr>, cat <file>, search <text>', 10, 0
+help_files_line:   db ' files: ls, files, cat <file>', 10, 0
+help_memory_line:  db ' memory: mem, alloc, free, memtest', 10, 0
+help_hint_line:    db 'Hint: type games for puzzles, paint for drawing, editor for text.', 10, 0
+about_top:         db '=================== ABOUT ===================', 10, 0
+about_title:       db 'Lum-OS capabilities', 10, 0
+about_bottom:      db '============================================', 10, 0
+about_boot_line:   db ' boot: FAT12 -> stage2 -> protected mode', 10, 0
+about_input_line:  db ' input: IRQ keyboard + serial console', 10, 0
+about_video_line:  db ' video: VGA text + serial output', 10, 0
+about_memory_line: db ' memory: paging, heap, guard pages', 10, 0
+about_files_line:  db ' files: floppy cache access, low-level shell I/O', 10, 0
+games_top:         db '=================== GAMES ===================', 10, 0
+games_title:       db 'Shell mini-games', 10, 0
+games_bottom:      db '============================================', 10, 0
+games_guess_line:  db ' guess      : play the number guess game', 10, 0
+games_slots_line:  db ' slots      : spin three random symbols', 10, 0
+games_search_line: db ' search <q> : search command names by substring', 10, 0
+games_hint_line:   db 'Try paint or editor for simple apps too.', 10, 0
+
+guess_top:         db '=================== GUESS ===================', 10, 0
+guess_title:       db 'Guess the number from 1 to 9', 10, 0
+guess_bottom:      db '============================================', 10, 0
+guess_intro_line:  db 'You have 3 tries. Enter 0 to cancel.', 10, 0
+guess_secret:      dd 0
+guess_attempts:    dd 0
+guess_attempt_prefix: db 'Tries left: ', 0
+guess_attempt_suffix: db 10, 0
+guess_prompt:      db 'guess> ', 0
+guess_lower_text:  db 'Too low.', 10, 0
+guess_higher_text: db 'Too high.', 10, 0
+guess_invalid_text: db 'Invalid input. Enter a number 1-9.', 10, 0
+guess_range_text:  db 'Out of range. Use 1-9 or 0 to cancel.', 10, 0
+guess_win_prefix:  db 'Correct! Secret number was ', 0
+guess_win_suffix:  db '.', 10, 0
+guess_lose_prefix: db 'You lost. The number was ', 0
+guess_lose_suffix: db '.', 10, 0
+guess_cancel_text: db 'Guess cancelled.', 10, 0
+
+slots_top:         db '=================== SLOTS ===================', 10, 0
+slots_title:       db 'Spin the reels and match symbols', 10, 0
+slots_bottom:      db '============================================', 10, 0
+slots_result_prefix: db 'Result: ', 0
+slots_left_bracket: db '[', 0
+slots_mid_bracket:  db ' ', 0
+slots_right_bracket: db ']', 10, 0
+slots_miss_text:   db 'No match. Better luck next time.', 10, 0
+slots_jackpot_text: db 'Jackpot! All three symbols match!', 10, 0
+slots_pair_text:   db 'Nice! A pair matched.', 10, 0
+slots_lucky_text:  db 'Lucky hit! One reel landed a special symbol.', 10, 0
+slots_reel_a:      dd 0
+slots_reel_b:      dd 0
+slots_reel_c:      dd 0
+
+paint_top:         db '=================== PAINT ===================', 10, 0
+paint_title:       db 'Simple text canvas: draw x y', 10, 0
+paint_bottom:      db '============================================', 10, 0
+paint_prompt:      db 'paint> ', 0
+paint_usage_text:  db 'Commands: draw x y, .show, .clear, .exit', 10, 0
+paint_invalid_text: db 'Invalid coordinates. Use x 0-39 y 0-15.', 10, 0
+paint_drawn_text:  db 'Point drawn.', 10, 0
+paint_cleared_text: db 'Canvas cleared.', 10, 0
+paint_exit_text:   db 'Exiting paint.', 10, 0
+paint_buffer:      times 640 db ' '
+
+editor_top:        db '=================== EDITOR ==================', 10, 0
+editor_title:      db 'Line editor: add lines, .show, .clear, .exit', 10, 0
+editor_bottom:     db '============================================', 10, 0
+editor_prompt:     db 'edit> ', 0
+editor_append_text: db 'Line appended.', 10, 0
+editor_full_text:  db 'Editor full. Maximum 2047 chars.', 10, 0
+editor_empty_text: db 'No text saved yet.', 10, 0
+editor_cleared_text: db 'Editor cleared.', 10, 0
+editor_exit_text:  db 'Exiting editor.', 10, 0
+editor_buffer:     times 2048 db 0
+editor_length:     dd 0
+banner_meta:       db 'Protected mode kernel, VGA + serial console, IRQ keyboard, paging, heap.', 10, 0
+banner_hint:       db 'Use help to list commands. QEMU keyboard and serial input are active.', 10, 10, 0
+shell_ready_hint:  db 'Shell ready. Type help for commands.', 10, 0
+
+search_top:              db '=================== SEARCH ==================', 10, 0
+search_title_prefix:     db 'Search query: ', 0
+search_title_suffix:     db 10, 0
+search_commands_header:  db 'Matching commands:', 10, 0
+search_files_header:     db 'Matching cached files:', 10, 0
+search_text_header:      db 'Matching text lines:', 10, 0
+search_none_text:        db 'No matches found.', 10, 0
+search_size_prefix:      db ' Size: ', 0
+search_text_hit_suffix:  db ' <-- match', 10, 0
+search_total_prefix:     db 'Total hits: ', 0
+search_total_suffix:     db 10, 0
+search_usage_text:       db 'Usage: search <query>', 10, 0
+list_bullet:             db ' - ', 0
+
+mem_header:              db 'Memory report:', 10, 0
+heap_header:             db 'Heap allocator report:', 10, 0
+ticks_header:            db 'Timer tick report:', 10, 0
+vmem_header:             db 'Virtual memory report:', 10, 0
+
 alloc_usage_text:  db 'Usage: alloc <bytes>', 10, 0
 alloc_failed_text: db 'Allocation failed: out of heap memory.', 10, 0
 alloc_ok_prefix:   db 'Allocated at ', 0
 alloc_ok_mid:      db ' size=', 0
 cat_usage_text:    db 'Usage: cat <file>', 10, 0
+cat_header_prefix: db '--- ', 0
+cat_header_suffix: db ' ---', 10, 0
 cat_missing_prefix: db 'Cached file not found: ', 0
 free_usage_text:   db 'Usage: free <addr>', 10, 0
 free_failed_text:  db 'Free failed: invalid or already freed block.', 10, 0
@@ -2853,7 +3232,61 @@ cmd_free_prefix:   db 'free ', 0
 cmd_memtest:       db 'memtest', 0
 cmd_reboot:        db 'reboot', 0
 cmd_halt:          db 'halt', 0
+cmd_games:         db 'games', 0
+cmd_guess:         db 'guess', 0
+cmd_slots:         db 'slots', 0
+cmd_search:        db 'search', 0
+cmd_search_prefix: db 'search ', 0
+cmd_paint:         db 'paint', 0
+cmd_paint_show:    db '.show', 0
+cmd_paint_clear:   db '.clear', 0
+cmd_paint_draw_prefix: db 'draw ', 0
+cmd_paint_exit:    db '.exit', 0
+cmd_editor:        db 'editor', 0
+cmd_editor_show:   db '.show', 0
+cmd_editor_clear:  db '.clear', 0
+cmd_editor_exit:   db '.exit', 0
+search_query_ptr:  dd 0
+search_total_hits: dd 0
+search_command_table:
+    dd cmd_help
+    dd cmd_about
+    dd cmd_clear
+    dd cmd_mem
+    dd cmd_ls
+    dd cmd_files
+    dd cmd_heap
+    dd cmd_ticks
+    dd cmd_uptime
+    dd cmd_vmem
+    dd cmd_cat
+    dd cmd_echo
+    dd cmd_alloc_prefix
+    dd cmd_free_prefix
+    dd cmd_memtest
+    dd cmd_reboot
+    dd cmd_halt
+    dd cmd_games
+    dd cmd_guess
+    dd cmd_slots
+    dd cmd_search
+    dd cmd_paint
+    dd cmd_editor
+rng_state:        dd 0
+slots_symbol_table:
+    dd slot_symbol_0
+    dd slot_symbol_1
+    dd slot_symbol_2
+    dd slot_symbol_3
+    dd slot_symbol_4
+    dd slot_symbol_5
 kbd_scancode_table:
+slot_symbol_0:     db '7', 0
+slot_symbol_1:     db '$', 0
+slot_symbol_2:     db '%', 0
+slot_symbol_3:     db '&', 0
+slot_symbol_4:     db '*', 0
+slot_symbol_5:     db '+', 0
     db 0, 27, '1', '2', '3', '4', '5', '6', '7', '8', '9', '0', '-', '=', 8, 9
     db 'q', 'w', 'e', 'r', 't', 'y', 'u', 'i', 'o', 'p', 0, 0, 10, 0
     db 'a', 's', 'd', 'f', 'g', 'h', 'j', 'k', 'l', 0, 0, 0, 0, 0
