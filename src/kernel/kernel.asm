@@ -29,6 +29,16 @@ bits 32
 %define KERNEL_STACK_GUARD  0x0010C000
 %define BOOTSTRAP_RESERVED_END (HEAP_START + HEAP_SIZE)
 %define FILE_CACHE_ENTRY_SIZE     24
+%define COLOR_BODY               0x07
+%define COLOR_PANEL              0x1F
+%define COLOR_PROMPT             0x0B
+%define COLOR_SECTION            0x0E
+%define COLOR_SUCCESS            0x0A
+%define COLOR_INFO               0x0B
+%define COLOR_FILE               0x0F
+%define COLOR_VALUE              0x0E
+%define COLOR_ERROR              0x0C
+%define COLOR_SUBTLE             0x08
 %macro INSTALL_ISR 2
     mov eax, %2
     mov ebx, %1
@@ -37,34 +47,51 @@ bits 32
 start:
     cli
     mov esp, KERNEL_STACK_TOP
-    mov byte [text_color], 0x0F
+    mov byte [text_color], COLOR_BODY
     call init_idt
     call serial_init
     call init_irq
     call init_paging
     call init_memory
+    call set_body_color
     call clear_screen
     call show_banner
 shell_loop:
-    mov esi, prompt
-    call console_write
+    call print_prompt
     call read_line
     call dispatch_command
     jmp shell_loop
 show_banner:
-    mov byte [text_color], 0x1E
+    mov byte [text_color], COLOR_PANEL
     mov esi, banner_top
     call console_write
-    mov esi, banner_mid
+    mov esi, banner_title
     call console_write
+    mov byte [text_color], COLOR_INFO
+    mov esi, banner_meta
+    call console_write
+    mov byte [text_color], COLOR_SECTION
+    mov esi, banner_hint
+    call console_write
+    mov byte [text_color], COLOR_PANEL
     mov esi, banner_bottom
     call console_write
-    mov byte [text_color], 0x0A
+    mov byte [text_color], COLOR_SUCCESS
     mov esi, boot_ok_message
     call console_write
-    mov byte [text_color], 0x07
-    mov esi, shell_hint
+    mov byte [text_color], COLOR_SUBTLE
+    mov esi, shell_ready_hint
     call console_write
+    call set_body_color
+    ret
+print_prompt:
+    mov byte [text_color], COLOR_PROMPT
+    mov esi, prompt
+    call console_write
+    call set_body_color
+    ret
+set_body_color:
+    mov byte [text_color], COLOR_BODY
     ret
 init_idt:
     INSTALL_ISR 0, isr0
@@ -451,6 +478,21 @@ dispatch_command:
     test eax, eax
     jnz .vmem
     mov esi, line_buffer
+    mov edi, cmd_games
+    call command_equals
+    test eax, eax
+    jnz .games
+    mov esi, line_buffer
+    mov edi, cmd_guess
+    call command_equals
+    test eax, eax
+    jnz .guess
+    mov esi, line_buffer
+    mov edi, cmd_slots
+    call command_equals
+    test eax, eax
+    jnz .slots
+    mov esi, line_buffer
     mov edi, cmd_memtest
     call command_equals
     test eax, eax
@@ -476,6 +518,11 @@ dispatch_command:
     test eax, eax
     jnz .cat_usage
     mov esi, line_buffer
+    mov edi, cmd_search
+    call command_equals
+    test eax, eax
+    jnz .search_usage
+    mov esi, line_buffer
     mov edi, cmd_echo_prefix
     call starts_with
     test eax, eax
@@ -491,26 +538,32 @@ dispatch_command:
     test eax, eax
     jnz .alloc
     mov esi, line_buffer
+    mov edi, cmd_search_prefix
+    call starts_with
+    test eax, eax
+    jnz .search
+    mov esi, line_buffer
     mov edi, cmd_free_prefix
     call starts_with
     test eax, eax
     jnz .free
+    mov byte [text_color], COLOR_ERROR
     mov esi, unknown_prefix
     call console_write
+    mov byte [text_color], COLOR_SECTION
     mov esi, line_buffer
     call console_write
     mov al, 10
     call console_putc
     jmp .done
 .help:
-    mov esi, help_text
-    call console_write
+    call print_help_screen
     jmp .done
 .about:
-    mov esi, about_text
-    call console_write
+    call print_about_screen
     jmp .done
 .clear:
+    call set_body_color
     call clear_screen
     call show_banner
     jmp .done
@@ -535,6 +588,15 @@ dispatch_command:
 .vmem:
     call print_vmem_report
     jmp .done
+.games:
+    call print_games_screen
+    jmp .done
+.guess:
+    call run_guess_game
+    jmp .done
+.slots:
+    call run_slots_game
+    jmp .done
 .memtest:
     call run_memory_stress_test
     jmp .done
@@ -543,10 +605,12 @@ dispatch_command:
     call console_putc
     jmp .done
 .cat_usage:
+    mov byte [text_color], COLOR_SECTION
     mov esi, cat_usage_text
     call console_write
     jmp .done
 .echo_with_text:
+    mov byte [text_color], COLOR_INFO
     mov esi, line_buffer + 5
     call console_write
     mov al, 10
@@ -555,6 +619,15 @@ dispatch_command:
 .cat:
     mov esi, line_buffer + 4
     call print_cached_file_contents
+    jmp .done
+.search_usage:
+    mov byte [text_color], COLOR_SECTION
+    mov esi, search_usage_text
+    call console_write
+    jmp .done
+.search:
+    mov esi, line_buffer + 7
+    call run_search
     jmp .done
 .alloc:
     mov esi, line_buffer + 6
@@ -566,21 +639,28 @@ dispatch_command:
     call kmalloc_align16
     test eax, eax
     jz .alloc_failed
+    mov byte [text_color], COLOR_SUCCESS
     mov esi, alloc_ok_prefix
     call console_write
+    mov byte [text_color], COLOR_VALUE
     call print_uint32
+    mov byte [text_color], COLOR_SUCCESS
     mov esi, alloc_ok_mid
     call console_write
+    mov byte [text_color], COLOR_VALUE
     mov eax, [last_alloc_size]
     call print_uint32
+    mov byte [text_color], COLOR_SUCCESS
     mov esi, bytes_suffix
     call console_write
     jmp .done
 .alloc_usage:
+    mov byte [text_color], COLOR_SECTION
     mov esi, alloc_usage_text
     call console_write
     jmp .done
 .alloc_failed:
+    mov byte [text_color], COLOR_ERROR
     mov esi, alloc_failed_text
     call console_write
     jmp .done
@@ -592,18 +672,22 @@ dispatch_command:
     call kfree
     test edx, edx
     jz .free_failed
+    mov byte [text_color], COLOR_SUCCESS
     mov esi, free_ok_text
     call console_write
     jmp .done
 .free_usage:
+    mov byte [text_color], COLOR_SECTION
     mov esi, free_usage_text
     call console_write
     jmp .done
 .free_failed:
+    mov byte [text_color], COLOR_ERROR
     mov esi, free_failed_text
     call console_write
     jmp .done
 .halt:
+    mov byte [text_color], COLOR_SECTION
     mov esi, halt_message
     call console_write
 .halt_loop:
@@ -611,36 +695,504 @@ dispatch_command:
     hlt
     jmp .halt_loop
 .reboot:
+    mov byte [text_color], COLOR_INFO
     mov esi, reboot_message
     call console_write
     call reboot_system
     jmp .done
 .done:
+    call set_body_color
+    ret
+print_help_screen:
+    mov byte [text_color], COLOR_PANEL
+    mov esi, help_top
+    call console_write
+    mov esi, help_title
+    call console_write
+    mov esi, help_bottom
+    call console_write
+    mov byte [text_color], COLOR_SUCCESS
+    mov esi, help_core_line
+    call console_write
+    mov byte [text_color], COLOR_INFO
+    mov esi, help_inspect_line
+    call console_write
+    mov byte [text_color], COLOR_SECTION
+    mov esi, help_files_line
+    call console_write
+    mov byte [text_color], COLOR_SUCCESS
+    mov esi, help_memory_line
+    call console_write
+    mov byte [text_color], COLOR_SUBTLE
+    mov esi, help_hint_line
+    call console_write
+    call set_body_color
+    ret
+print_about_screen:
+    mov byte [text_color], COLOR_PANEL
+    mov esi, about_top
+    call console_write
+    mov esi, about_title
+    call console_write
+    mov esi, about_bottom
+    call console_write
+    mov byte [text_color], COLOR_INFO
+    mov esi, about_boot_line
+    call console_write
+    mov esi, about_input_line
+    call console_write
+    mov esi, about_video_line
+    call console_write
+    mov byte [text_color], COLOR_SUCCESS
+    mov esi, about_memory_line
+    call console_write
+    mov byte [text_color], COLOR_SECTION
+    mov esi, about_files_line
+    call console_write
+    call set_body_color
+    ret
+print_games_screen:
+    mov byte [text_color], COLOR_PANEL
+    mov esi, games_top
+    call console_write
+    mov esi, games_title
+    call console_write
+    mov esi, games_bottom
+    call console_write
+    mov byte [text_color], COLOR_SUCCESS
+    mov esi, games_guess_line
+    call console_write
+    mov esi, games_slots_line
+    call console_write
+    mov byte [text_color], COLOR_INFO
+    mov esi, games_search_line
+    call console_write
+    mov byte [text_color], COLOR_SUBTLE
+    mov esi, games_hint_line
+    call console_write
+    call set_body_color
+    ret
+run_guess_game:
+    push eax
+    push ebx
+    push ecx
+    push edx
+    push esi
+    push edi
+    mov byte [text_color], COLOR_PANEL
+    mov esi, guess_top
+    call console_write
+    mov esi, guess_title
+    call console_write
+    mov esi, guess_bottom
+    call console_write
+    mov byte [text_color], COLOR_INFO
+    mov esi, guess_intro_line
+    call console_write
+    mov ebx, 9
+    call random_mod
+    inc eax
+    mov [guess_secret], eax
+    mov dword [guess_attempts], 3
+.loop:
+    mov byte [text_color], COLOR_SECTION
+    mov esi, guess_attempt_prefix
+    call console_write
+    mov eax, 4
+    sub eax, [guess_attempts]
+    call print_uint32
+    mov byte [text_color], COLOR_SUBTLE
+    mov esi, guess_attempt_suffix
+    call console_write
+    mov byte [text_color], COLOR_PROMPT
+    mov esi, guess_prompt
+    call console_write
+    call set_body_color
+    call read_line
+    mov esi, line_buffer
+    call parse_uint32
+    test edx, edx
+    jz .invalid
+    cmp eax, 0
+    je .cancel
+    cmp eax, 9
+    ja .range
+    cmp eax, [guess_secret]
+    je .win
+    cmp eax, [guess_secret]
+    jb .higher
+    mov byte [text_color], COLOR_SECTION
+    mov esi, guess_lower_text
+    call console_write
+    dec dword [guess_attempts]
+    jnz .loop
+    jmp .lose
+.higher:
+    mov byte [text_color], COLOR_SECTION
+    mov esi, guess_higher_text
+    call console_write
+    dec dword [guess_attempts]
+    jnz .loop
+    jmp .lose
+.invalid:
+    mov byte [text_color], COLOR_ERROR
+    mov esi, guess_invalid_text
+    call console_write
+    jmp .loop
+.range:
+    mov byte [text_color], COLOR_ERROR
+    mov esi, guess_range_text
+    call console_write
+    jmp .loop
+.win:
+    mov byte [text_color], COLOR_SUCCESS
+    mov esi, guess_win_prefix
+    call console_write
+    mov byte [text_color], COLOR_VALUE
+    mov eax, [guess_secret]
+    call print_uint32
+    mov byte [text_color], COLOR_SUCCESS
+    mov esi, guess_win_suffix
+    call console_write
+    jmp .out
+.lose:
+    mov byte [text_color], COLOR_ERROR
+    mov esi, guess_lose_prefix
+    call console_write
+    mov byte [text_color], COLOR_VALUE
+    mov eax, [guess_secret]
+    call print_uint32
+    mov byte [text_color], COLOR_ERROR
+    mov esi, guess_lose_suffix
+    call console_write
+    jmp .out
+.cancel:
+    mov byte [text_color], COLOR_SUBTLE
+    mov esi, guess_cancel_text
+    call console_write
+.out:
+    call set_body_color
+    pop edi
+    pop esi
+    pop edx
+    pop ecx
+    pop ebx
+    pop eax
+    ret
+run_slots_game:
+    push eax
+    push ebx
+    push ecx
+    push edx
+    push esi
+    mov byte [text_color], COLOR_PANEL
+    mov esi, slots_top
+    call console_write
+    mov esi, slots_title
+    call console_write
+    mov esi, slots_bottom
+    call console_write
+    mov ebx, 6
+    call random_mod
+    mov [slots_reel_a], eax
+    mov ebx, 6
+    call random_mod
+    mov [slots_reel_b], eax
+    mov ebx, 6
+    call random_mod
+    mov [slots_reel_c], eax
+    mov byte [text_color], COLOR_INFO
+    mov esi, slots_result_prefix
+    call console_write
+    mov byte [text_color], COLOR_FILE
+    mov esi, slots_left_bracket
+    call console_write
+    mov eax, [slots_reel_a]
+    call print_slot_symbol
+    mov esi, slots_mid_bracket
+    call console_write
+    mov eax, [slots_reel_b]
+    call print_slot_symbol
+    mov esi, slots_mid_bracket
+    call console_write
+    mov eax, [slots_reel_c]
+    call print_slot_symbol
+    mov esi, slots_right_bracket
+    call console_write
+    mov eax, [slots_reel_a]
+    cmp eax, [slots_reel_b]
+    jne .check_pairs
+    cmp eax, [slots_reel_c]
+    je .jackpot
+.check_pairs:
+    mov eax, [slots_reel_a]
+    cmp eax, [slots_reel_b]
+    je .pair
+    cmp eax, [slots_reel_c]
+    je .pair
+    mov eax, [slots_reel_b]
+    cmp eax, [slots_reel_c]
+    je .pair
+    mov eax, [slots_reel_a]
+    cmp eax, 2
+    je .lucky
+    mov eax, [slots_reel_b]
+    cmp eax, 2
+    je .lucky
+    mov eax, [slots_reel_c]
+    cmp eax, 2
+    je .lucky
+    mov byte [text_color], COLOR_SUBTLE
+    mov esi, slots_miss_text
+    call console_write
+    jmp .out
+.jackpot:
+    mov byte [text_color], COLOR_SUCCESS
+    mov esi, slots_jackpot_text
+    call console_write
+    jmp .out
+.pair:
+    mov byte [text_color], COLOR_SECTION
+    mov esi, slots_pair_text
+    call console_write
+    jmp .out
+.lucky:
+    mov byte [text_color], COLOR_INFO
+    mov esi, slots_lucky_text
+    call console_write
+.out:
+    call set_body_color
+    pop esi
+    pop edx
+    pop ecx
+    pop ebx
+    pop eax
+    ret
+run_search:
+    push eax
+    push ebx
+    push ecx
+    push edx
+    push esi
+    push edi
+.skip_space:
+    cmp byte [esi], ' '
+    je .advance
+    cmp byte [esi], 9
+    jne .start
+.advance:
+    inc esi
+    jmp .skip_space
+.start:
+    cmp byte [esi], 0
+    je .usage
+    mov [search_query_ptr], esi
+    mov dword [search_total_hits], 0
+    mov byte [text_color], COLOR_PANEL
+    mov esi, search_top
+    call console_write
+    mov esi, search_title_prefix
+    call console_write
+    mov byte [text_color], COLOR_SECTION
+    mov esi, [search_query_ptr]
+    call console_write
+    mov byte [text_color], COLOR_PANEL
+    mov esi, search_title_suffix
+    call console_write
+    mov byte [text_color], COLOR_SECTION
+    mov esi, search_commands_header
+    call console_write
+    mov ebx, search_command_table
+    xor edx, edx
+.command_loop:
+    mov edi, [ebx]
+    test edi, edi
+    jz .command_done
+    mov esi, edi
+    mov edi, [search_query_ptr]
+    call string_contains_ci
+    test eax, eax
+    jz .command_next
+    inc edx
+    inc dword [search_total_hits]
+    mov byte [text_color], COLOR_FILE
+    mov esi, list_bullet
+    call console_write
+    mov esi, [ebx]
+    call console_write
+    mov al, 10
+    call console_putc
+.command_next:
+    add ebx, 4
+    jmp .command_loop
+.command_done:
+    test edx, edx
+    jnz .files_section
+    mov byte [text_color], COLOR_SUBTLE
+    mov esi, search_none_text
+    call console_write
+.files_section:
+    mov byte [text_color], COLOR_SECTION
+    mov esi, search_files_header
+    call console_write
+    cmp dword [BOOT_INFO_ADDR], BOOTINFO_MAGIC
+    jne .files_missing
+    mov ecx, [BOOT_INFO_ADDR + BOOTINFO_FILE_COUNT]
+    test ecx, ecx
+    jz .files_none
+    mov ebx, [BOOT_INFO_ADDR + BOOTINFO_FILE_TABLE_ADDR]
+    xor edx, edx
+.file_loop:
+    push ecx
+    push ebx
+    mov esi, ebx
+    mov edi, [search_query_ptr]
+    call string_contains_ci
+    test eax, eax
+    jz .file_next
+    inc edx
+    inc dword [search_total_hits]
+    mov byte [text_color], COLOR_FILE
+    mov esi, list_bullet
+    call console_write
+    mov esi, ebx
+    call console_write
+    mov byte [text_color], COLOR_SUBTLE
+    mov esi, search_size_prefix
+    call console_write
+    mov byte [text_color], COLOR_VALUE
+    mov eax, [ebx + 20]
+    call print_uint32
+    mov byte [text_color], COLOR_SUBTLE
+    mov esi, bytes_suffix
+    call console_write
+.file_next:
+    pop ebx
+    pop ecx
+    add ebx, FILE_CACHE_ENTRY_SIZE
+    dec ecx
+    jnz .file_loop
+    test edx, edx
+    jnz .text_section
+.files_none:
+    mov byte [text_color], COLOR_SUBTLE
+    mov esi, search_none_text
+    call console_write
+    jmp .text_section
+.files_missing:
+    mov byte [text_color], COLOR_ERROR
+    mov esi, files_missing
+    call console_write
+.text_section:
+    mov byte [text_color], COLOR_SECTION
+    mov esi, search_text_header
+    call console_write
+    cmp dword [BOOT_INFO_ADDR], BOOTINFO_MAGIC
+    jne .text_missing
+    mov ecx, [BOOT_INFO_ADDR + BOOTINFO_FILE_COUNT]
+    test ecx, ecx
+    jz .text_none
+    mov ebx, [BOOT_INFO_ADDR + BOOTINFO_FILE_TABLE_ADDR]
+    xor edx, edx
+.text_loop:
+    push ecx
+    push ebx
+    mov esi, [search_query_ptr]
+    mov edi, [ebx + 16]
+    mov ecx, [ebx + 20]
+    call memory_contains_ci
+    test eax, eax
+    jz .text_next
+    inc edx
+    inc dword [search_total_hits]
+    mov byte [text_color], COLOR_FILE
+    mov esi, list_bullet
+    call console_write
+    mov esi, ebx
+    call console_write
+    mov byte [text_color], COLOR_SUBTLE
+    mov esi, search_text_hit_suffix
+    call console_write
+.text_next:
+    pop ebx
+    pop ecx
+    add ebx, FILE_CACHE_ENTRY_SIZE
+    dec ecx
+    jnz .text_loop
+    test edx, edx
+    jnz .summary
+.text_none:
+    mov byte [text_color], COLOR_SUBTLE
+    mov esi, search_none_text
+    call console_write
+    jmp .summary
+.text_missing:
+    mov byte [text_color], COLOR_ERROR
+    mov esi, files_missing
+    call console_write
+.summary:
+    mov byte [text_color], COLOR_INFO
+    mov esi, search_total_prefix
+    call console_write
+    mov byte [text_color], COLOR_VALUE
+    mov eax, [search_total_hits]
+    call print_uint32
+    mov byte [text_color], COLOR_SUBTLE
+    mov esi, search_total_suffix
+    call console_write
+    jmp .out
+.usage:
+    mov byte [text_color], COLOR_SECTION
+    mov esi, search_usage_text
+    call console_write
+.out:
+    call set_body_color
+    pop edi
+    pop esi
+    pop edx
+    pop ecx
+    pop ebx
+    pop eax
     ret
 print_memory_report:
+    mov byte [text_color], COLOR_SECTION
+    mov esi, mem_header
+    call console_write
+    call set_body_color
     cmp dword [BOOT_INFO_ADDR], BOOTINFO_MAGIC
     jne .missing
+    mov byte [text_color], COLOR_INFO
     mov esi, mem_conv_prefix
     call console_write
+    mov byte [text_color], COLOR_VALUE
     movzx eax, word [BOOT_INFO_ADDR + BOOTINFO_CONV_KB]
     call print_uint32
+    mov byte [text_color], COLOR_SUBTLE
     mov esi, kb_suffix
     call console_write
+    mov byte [text_color], COLOR_INFO
     mov esi, mem_ext_prefix
     call console_write
+    mov byte [text_color], COLOR_VALUE
     movzx eax, word [BOOT_INFO_ADDR + BOOTINFO_EXT_KB]
     call print_uint32
+    mov byte [text_color], COLOR_SUBTLE
     mov esi, kb_suffix
     call console_write
+    mov byte [text_color], COLOR_INFO
     mov esi, mem_total_prefix
     call console_write
+    mov byte [text_color], COLOR_VALUE
     mov eax, [BOOT_INFO_ADDR + BOOTINFO_TOTAL_KB]
     call print_uint32
+    mov byte [text_color], COLOR_SUBTLE
     mov esi, kb_suffix
     call console_write
+    call set_body_color
     call print_heap_report
     ret
 .missing:
+    mov byte [text_color], COLOR_ERROR
     mov esi, mem_missing
     call console_write
     ret
@@ -653,8 +1205,10 @@ print_root_directory:
     jz .missing
     test ecx, ecx
     jz .empty
+    mov byte [text_color], COLOR_SECTION
     mov esi, ls_header
     call console_write
+    call set_body_color
     xor edx, edx
 .next_entry:
     test ecx, ecx
@@ -671,14 +1225,19 @@ print_root_directory:
     push ecx
     push edx
     push ebx
+    mov byte [text_color], COLOR_FILE
     mov esi, ebx
     call print_fat_name
+    mov byte [text_color], COLOR_SUBTLE
     mov esi, ls_spacing
     call console_write
+    mov byte [text_color], COLOR_VALUE
     mov eax, [ebx + 28]
     call print_uint32
+    mov byte [text_color], COLOR_SUBTLE
     mov esi, bytes_suffix
     call console_write
+    call set_body_color
     pop ebx
     pop edx
     pop ecx
@@ -691,10 +1250,12 @@ print_root_directory:
     test edx, edx
     jnz .done
 .empty:
+    mov byte [text_color], COLOR_SUBTLE
     mov esi, ls_empty
     call console_write
     ret
 .missing:
+    mov byte [text_color], COLOR_ERROR
     mov esi, ls_missing
     call console_write
 .done:
@@ -706,19 +1267,26 @@ print_cached_files_report:
     test ecx, ecx
     jz .empty
     mov ebx, [BOOT_INFO_ADDR + BOOTINFO_FILE_TABLE_ADDR]
+    mov byte [text_color], COLOR_SECTION
     mov esi, files_header
     call console_write
+    call set_body_color
 .next:
     push ecx
     push ebx
+    mov byte [text_color], COLOR_FILE
     mov esi, ebx
     call console_write
+    mov byte [text_color], COLOR_SUBTLE
     mov esi, ls_spacing
     call console_write
+    mov byte [text_color], COLOR_VALUE
     mov eax, [ebx + 20]
     call print_uint32
+    mov byte [text_color], COLOR_SUBTLE
     mov esi, bytes_suffix
     call console_write
+    call set_body_color
     pop ebx
     pop ecx
     add ebx, FILE_CACHE_ENTRY_SIZE
@@ -726,10 +1294,12 @@ print_cached_files_report:
     jnz .next
     ret
 .empty:
+    mov byte [text_color], COLOR_SUBTLE
     mov esi, files_empty
     call console_write
     ret
 .missing:
+    mov byte [text_color], COLOR_ERROR
     mov esi, files_missing
     call console_write
     ret
@@ -744,6 +1314,16 @@ print_cached_file_contents:
     call find_cached_file
     test eax, eax
     jz .missing
+    mov byte [text_color], COLOR_PANEL
+    mov esi, cat_header_prefix
+    call console_write
+    mov byte [text_color], COLOR_SECTION
+    mov esi, edi
+    call console_write
+    mov byte [text_color], COLOR_PANEL
+    mov esi, cat_header_suffix
+    call console_write
+    mov byte [text_color], COLOR_BODY
     mov ebx, eax
     mov ecx, edx
     test ecx, ecx
@@ -756,8 +1336,10 @@ print_cached_file_contents:
     call console_putc
     jmp .done
 .missing:
+    mov byte [text_color], COLOR_ERROR
     mov esi, cat_missing_prefix
     call console_write
+    mov byte [text_color], COLOR_SECTION
     mov esi, edi
     call console_write
     mov al, 10
@@ -805,19 +1387,29 @@ find_cached_file:
     pop ebx
     ret
 print_timer_report:
+    mov byte [text_color], COLOR_SECTION
+    mov esi, ticks_header
+    call console_write
+    call set_body_color
+    mov byte [text_color], COLOR_INFO
     mov esi, ticks_prefix
     call console_write
+    mov byte [text_color], COLOR_VALUE
     mov eax, [timer_ticks]
     call print_uint32
+    mov byte [text_color], COLOR_SUBTLE
     mov esi, ticks_suffix
     call console_write
+    mov byte [text_color], COLOR_INFO
     mov esi, uptime_prefix
     call console_write
+    mov byte [text_color], COLOR_VALUE
     mov eax, [timer_ticks]
     xor edx, edx
     mov ebx, TIMER_HZ
     div ebx
     call print_uint32
+    mov byte [text_color], COLOR_SUBTLE
     mov esi, seconds_suffix
     call console_write
     ret
@@ -826,6 +1418,11 @@ print_vmem_report:
     push ebx
     push ecx
     push edx
+    mov byte [text_color], COLOR_SECTION
+    mov esi, vmem_header
+    call console_write
+    call set_body_color
+    mov byte [text_color], COLOR_INFO
     mov esi, vmem_present_prefix
     call console_write
     xor ebx, ebx
@@ -843,36 +1440,51 @@ print_vmem_report:
     inc ecx
     cmp ecx, 1024
     jb .count_loop
+    mov byte [text_color], COLOR_VALUE
     mov eax, ebx
     call print_uint32
+    mov byte [text_color], COLOR_SUBTLE
     mov esi, vmem_total_suffix
     call console_write
+    mov byte [text_color], COLOR_INFO
     mov esi, vmem_writable_prefix
     call console_write
+    mov byte [text_color], COLOR_VALUE
     mov eax, edx
     call print_uint32
+    mov byte [text_color], COLOR_SUBTLE
     mov esi, vmem_total_suffix
     call console_write
+    mov byte [text_color], COLOR_INFO
     mov esi, frames_reserved_prefix
     call console_write
+    mov byte [text_color], COLOR_VALUE
     mov eax, [frame_reserved_count]
     call print_uint32
+    mov byte [text_color], COLOR_SUBTLE
     mov esi, newline_suffix
     call console_write
+    mov byte [text_color], COLOR_INFO
     mov esi, frames_runtime_prefix
     call console_write
+    mov byte [text_color], COLOR_VALUE
     mov eax, [frame_dynamic_count]
     call print_uint32
+    mov byte [text_color], COLOR_SUBTLE
     mov esi, newline_suffix
     call console_write
+    mov byte [text_color], COLOR_INFO
     mov esi, frames_free_prefix
     call console_write
+    mov byte [text_color], COLOR_VALUE
     mov eax, FRAME_COUNT
     sub eax, [frame_reserved_count]
     sub eax, [frame_dynamic_count]
     call print_uint32
+    mov byte [text_color], COLOR_SUBTLE
     mov esi, newline_suffix
     call console_write
+    mov byte [text_color], COLOR_INFO
     mov esi, null_page_prefix
     call console_write
     mov eax, [first_page_table + 0]
@@ -895,16 +1507,22 @@ print_page_state:
     jz .unmapped
     test eax, 2
     jz .readonly
+    mov byte [text_color], COLOR_SUCCESS
     mov esi, page_rw_text
     call console_write
+    call set_body_color
     ret
 .readonly:
+    mov byte [text_color], COLOR_SECTION
     mov esi, page_ro_text
     call console_write
+    call set_body_color
     ret
 .unmapped:
+    mov byte [text_color], COLOR_ERROR
     mov esi, page_unmapped_text
     call console_write
+    call set_body_color
     ret
 init_memory:
     mov dword [heap_end], HEAP_START + HEAP_SIZE
@@ -1001,42 +1619,64 @@ update_heap_high_water:
     pop ebx
     ret
 print_heap_report:
+    mov byte [text_color], COLOR_SECTION
+    mov esi, heap_header
+    call console_write
+    call set_body_color
+    mov byte [text_color], COLOR_INFO
     mov esi, heap_start_prefix
     call console_write
+    mov byte [text_color], COLOR_VALUE
     mov eax, HEAP_START
     call print_uint32
+    mov byte [text_color], COLOR_INFO
     mov esi, heap_end_prefix
     call console_write
+    mov byte [text_color], COLOR_VALUE
     mov eax, [heap_end]
     call print_uint32
+    mov byte [text_color], COLOR_INFO
     mov esi, heap_used_prefix
     call console_write
+    mov byte [text_color], COLOR_VALUE
     mov eax, [heap_used_bytes]
     call print_uint32
+    mov byte [text_color], COLOR_SUBTLE
     mov esi, bytes_suffix
     call console_write
+    mov byte [text_color], COLOR_INFO
     mov esi, heap_free_prefix
     call console_write
+    mov byte [text_color], COLOR_VALUE
     mov eax, [heap_end]
     sub eax, HEAP_START
     sub eax, [heap_used_bytes]
     call print_uint32
+    mov byte [text_color], COLOR_SUBTLE
     mov esi, bytes_suffix
     call console_write
+    mov byte [text_color], COLOR_INFO
     mov esi, heap_hw_prefix
     call console_write
+    mov byte [text_color], COLOR_VALUE
     mov eax, [heap_high_water]
     call print_uint32
+    mov byte [text_color], COLOR_SUBTLE
     mov esi, bytes_suffix
     call console_write
+    mov byte [text_color], COLOR_INFO
     mov esi, heap_ops_prefix
     call console_write
+    mov byte [text_color], COLOR_VALUE
     mov eax, [heap_alloc_count]
     call print_uint32
+    mov byte [text_color], COLOR_SUBTLE
     mov esi, slash_sep
     call console_write
+    mov byte [text_color], COLOR_VALUE
     mov eax, [heap_free_count]
     call print_uint32
+    mov byte [text_color], COLOR_SUBTLE
     mov esi, newline_suffix
     call console_write
     ret
@@ -1309,6 +1949,7 @@ run_memory_stress_test:
     push ecx
     push edx
     push esi
+    mov byte [text_color], COLOR_INFO
     mov esi, memtest_start_text
     call console_write
     mov ebx, 500
@@ -1331,10 +1972,12 @@ run_memory_stress_test:
     call kmalloc_align16
     test eax, eax
     jnz .fail
+    mov byte [text_color], COLOR_SUCCESS
     mov esi, memtest_ok_text
     call console_write
     jmp .out
 .fail:
+    mov byte [text_color], COLOR_ERROR
     mov esi, memtest_fail_text
     call console_write
 .out:
@@ -1462,6 +2105,126 @@ string_equals_ci:
 .done:
     pop edi
     pop esi
+    pop ebx
+    ret
+string_contains_ci:
+    push ebx
+    push ecx
+    push edx
+    push esi
+    push edi
+    cmp byte [edi], 0
+    je .no_match
+.outer:
+    mov al, [esi]
+    test al, al
+    jz .no_match
+    mov ebx, esi
+    mov edx, edi
+.inner:
+    mov al, [edx]
+    test al, al
+    jz .match
+    mov cl, [ebx]
+    test cl, cl
+    jz .advance
+    cmp al, 'a'
+    jb .needle_folded
+    cmp al, 'z'
+    ja .needle_folded
+    sub al, 32
+.needle_folded:
+    cmp cl, 'a'
+    jb .hay_folded
+    cmp cl, 'z'
+    ja .hay_folded
+    sub cl, 32
+.hay_folded:
+    cmp al, cl
+    jne .advance
+    inc ebx
+    inc edx
+    jmp .inner
+.advance:
+    inc esi
+    jmp .outer
+.match:
+    mov eax, 1
+    jmp .done
+.no_match:
+    xor eax, eax
+.done:
+    pop edi
+    pop esi
+    pop edx
+    pop ecx
+    pop ebx
+    ret
+compare_memory_ci:
+    push ebx
+.loop:
+    mov al, [esi]
+    test al, al
+    jz .match
+    test ecx, ecx
+    jz .no_match
+    mov bl, [edi]
+    cmp al, 'a'
+    jb .needle_folded
+    cmp al, 'z'
+    ja .needle_folded
+    sub al, 32
+.needle_folded:
+    cmp bl, 'a'
+    jb .data_folded
+    cmp bl, 'z'
+    ja .data_folded
+    sub bl, 32
+.data_folded:
+    cmp al, bl
+    jne .no_match
+    inc esi
+    inc edi
+    dec ecx
+    jmp .loop
+.match:
+    mov eax, 1
+    jmp .done
+.no_match:
+    xor eax, eax
+.done:
+    pop ebx
+    ret
+memory_contains_ci:
+    push ebx
+    push ecx
+    push edx
+    push esi
+    push edi
+    cmp byte [esi], 0
+    je .no_match
+.outer:
+    test ecx, ecx
+    jz .no_match
+    push ecx
+    push esi
+    push edi
+    call compare_memory_ci
+    pop edi
+    pop esi
+    pop ecx
+    test eax, eax
+    jnz .done
+    inc edi
+    dec ecx
+    jmp .outer
+.no_match:
+    xor eax, eax
+.done:
+    pop edi
+    pop esi
+    pop edx
+    pop ecx
     pop ebx
     ret
 console_write_bytes:
@@ -1872,6 +2635,42 @@ print_uint32_3pad:
 .print:
     mov eax, [esp]
     call print_uint32
+    pop eax
+    ret
+random_next:
+    push edx
+    mov eax, [rng_state]
+    test eax, eax
+    jnz .seeded
+    mov eax, [timer_ticks]
+    xor eax, 0xA341316C
+    add eax, [heap_alloc_count]
+.seeded:
+    imul eax, eax, 1664525
+    add eax, 1013904223
+    xor eax, [timer_ticks]
+    rol eax, 7
+    mov [rng_state], eax
+    pop edx
+    ret
+random_mod:
+    push edx
+    test ebx, ebx
+    jz .zero
+    call random_next
+    xor edx, edx
+    div ebx
+    mov eax, edx
+    pop edx
+    ret
+.zero:
+    xor eax, eax
+    pop edx
+    ret
+print_slot_symbol:
+    push eax
+    mov esi, [slots_symbol_table + eax * 4]
+    call console_write
     pop eax
     ret
 reboot_system:
