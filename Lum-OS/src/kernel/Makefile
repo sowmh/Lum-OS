@@ -1,4 +1,4 @@
-BUILD_DIR ?= $(abspath ../../../build)
+BUILD_DIR ?= ../../../build
 
 ASM = nasm
 CC = gcc
@@ -8,7 +8,7 @@ TARGET = $(BUILD_DIR)/kernel.bin
 
 # Source files
 ASM_SOURCES = entry.asm
-C_SOURCES = kernel.c
+C_SOURCES = kernel.c ui_vga.c desktop.c wm.c win_shell.c win_monitor.c win_apps.c win_files.c win_calc.c win_paint.c win_about.c
 
 # Object files
 ASM_OBJECTS = $(patsubst %.asm, $(BUILD_DIR)/kernel_%.o, $(ASM_SOURCES))
