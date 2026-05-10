@@ -4140,6 +4140,13 @@ search_command_table:
     dd cmd_editor
     dd 0
 rng_state:        dd 0
+; Keep slot glyph strings separate from the keyboard map: scancode lookup is direct-indexed.
+slot_symbol_0:     db '7', 0
+slot_symbol_1:     db '$', 0
+slot_symbol_2:     db '%', 0
+slot_symbol_3:     db '&', 0
+slot_symbol_4:     db '*', 0
+slot_symbol_5:     db '+', 0
 slots_symbol_table:
     dd slot_symbol_0
     dd slot_symbol_1
@@ -4148,12 +4155,6 @@ slots_symbol_table:
     dd slot_symbol_4
     dd slot_symbol_5
 kbd_scancode_table:
-slot_symbol_0:     db '7', 0
-slot_symbol_1:     db '$', 0
-slot_symbol_2:     db '%', 0
-slot_symbol_3:     db '&', 0
-slot_symbol_4:     db '*', 0
-slot_symbol_5:     db '+', 0
     db 0, 27, '1', '2', '3', '4', '5', '6', '7', '8', '9', '0', 0x27, 0xA1, 8, 9
     db 'q', 'w', 'e', 'r', 't', 'y', 'u', 'i', 'o', 'p', '`', '+', 10, 0
     db 'a', 's', 'd', 'f', 'g', 'h', 'j', 'k', 'l', 0xA4, 0xB4, 0x87, 0, 0
