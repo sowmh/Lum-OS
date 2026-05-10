@@ -29,16 +29,16 @@ bits 32
 %define KERNEL_STACK_GUARD  0x0010C000
 %define BOOTSTRAP_RESERVED_END (HEAP_START + HEAP_SIZE)
 %define FILE_CACHE_ENTRY_SIZE     24
-%define COLOR_BODY               0x07
-%define COLOR_PANEL              0x1F
-%define COLOR_PROMPT             0x0B
-%define COLOR_SECTION            0x0E
-%define COLOR_SUCCESS            0x0A
-%define COLOR_INFO               0x0B
-%define COLOR_FILE               0x0F
-%define COLOR_VALUE              0x0E
-%define COLOR_ERROR              0x0C
-%define COLOR_SUBTLE             0x08
+%define COLOR_BODY               0x70
+%define COLOR_PANEL              0x7F
+%define COLOR_PROMPT             0x71
+%define COLOR_SECTION            0x79
+%define COLOR_SUCCESS            0x72
+%define COLOR_INFO               0x70
+%define COLOR_FILE               0x70
+%define COLOR_VALUE              0x79
+%define COLOR_ERROR              0x74
+%define COLOR_SUBTLE             0x78
 %macro INSTALL_ISR 2
     mov eax, %2
     mov ebx, %1
@@ -62,12 +62,15 @@ shell_loop:
     call dispatch_command
     jmp shell_loop
 show_banner:
+    call prepare_window_surface
     mov byte [text_color], COLOR_PANEL
     mov esi, banner_top
     call console_write
     mov esi, banner_title
     call console_write
     mov byte [text_color], COLOR_INFO
+    mov esi, banner_mid
+    call console_write
     mov esi, banner_meta
     call console_write
     mov byte [text_color], COLOR_SECTION
@@ -81,6 +84,18 @@ show_banner:
     call console_write
     mov byte [text_color], COLOR_SUBTLE
     mov esi, shell_ready_hint
+    call console_write
+    call set_body_color
+    ret
+prepare_window_surface:
+    call set_body_color
+    call clear_screen
+draw_menu_bar:
+    mov byte [text_color], COLOR_PANEL
+    mov esi, menu_bar
+    call console_write
+    mov byte [text_color], COLOR_SUBTLE
+    mov esi, menu_rule
     call console_write
     call set_body_color
     ret
@@ -483,6 +498,11 @@ dispatch_command:
     test eax, eax
     jnz .games
     mov esi, line_buffer
+    mov edi, cmd_apps
+    call command_equals
+    test eax, eax
+    jnz .apps
+    mov esi, line_buffer
     mov edi, cmd_guess
     call command_equals
     test eax, eax
@@ -492,6 +512,26 @@ dispatch_command:
     call command_equals
     test eax, eax
     jnz .slots
+    mov esi, line_buffer
+    mov edi, cmd_dice
+    call command_equals
+    test eax, eax
+    jnz .dice
+    mov esi, line_buffer
+    mov edi, cmd_browser
+    call command_equals
+    test eax, eax
+    jnz .browser
+    mov esi, line_buffer
+    mov edi, cmd_docs
+    call command_equals
+    test eax, eax
+    jnz .docs
+    mov esi, line_buffer
+    mov edi, cmd_calc
+    call command_equals
+    test eax, eax
+    jnz .calc
     mov esi, line_buffer
     mov edi, cmd_paint
     call command_equals
@@ -601,11 +641,26 @@ dispatch_command:
 .games:
     call print_games_screen
     jmp .done
+.apps:
+    call print_apps_screen
+    jmp .done
 .guess:
     call run_guess_game
     jmp .done
 .slots:
     call run_slots_game
+    jmp .done
+.dice:
+    call run_dice_game
+    jmp .done
+.browser:
+    call run_browser_app
+    jmp .done
+.docs:
+    call run_docs_app
+    jmp .done
+.calc:
+    call run_calc_app
     jmp .done
 .paint:
     call run_paint_app
@@ -637,9 +692,8 @@ dispatch_command:
     call print_cached_file_contents
     jmp .done
 .search_usage:
-    mov byte [text_color], COLOR_SECTION
-    mov esi, search_usage_text
-    call console_write
+    mov esi, line_buffer + 6
+    call run_search
     jmp .done
 .search:
     mov esi, line_buffer + 7
@@ -720,6 +774,7 @@ dispatch_command:
     call set_body_color
     ret
 print_help_screen:
+    call prepare_window_surface
     mov byte [text_color], COLOR_PANEL
     mov esi, help_top
     call console_write
@@ -739,12 +794,16 @@ print_help_screen:
     mov byte [text_color], COLOR_SUCCESS
     mov esi, help_memory_line
     call console_write
+    mov byte [text_color], COLOR_INFO
+    mov esi, help_apps_line
+    call console_write
     mov byte [text_color], COLOR_SUBTLE
     mov esi, help_hint_line
     call console_write
     call set_body_color
     ret
 print_about_screen:
+    call prepare_window_surface
     mov byte [text_color], COLOR_PANEL
     mov esi, about_top
     call console_write
@@ -768,6 +827,7 @@ print_about_screen:
     call set_body_color
     ret
 print_games_screen:
+    call prepare_window_surface
     mov byte [text_color], COLOR_PANEL
     mov esi, games_top
     call console_write
@@ -780,11 +840,38 @@ print_games_screen:
     call console_write
     mov esi, games_slots_line
     call console_write
+    mov esi, games_dice_line
+    call console_write
     mov byte [text_color], COLOR_INFO
-    mov esi, games_search_line
+    mov esi, games_apps_line
     call console_write
     mov byte [text_color], COLOR_SUBTLE
     mov esi, games_hint_line
+    call console_write
+    call set_body_color
+    ret
+print_apps_screen:
+    call prepare_window_surface
+    mov byte [text_color], COLOR_PANEL
+    mov esi, apps_top
+    call console_write
+    mov esi, apps_title
+    call console_write
+    mov esi, apps_bottom
+    call console_write
+    mov byte [text_color], COLOR_SUCCESS
+    mov esi, apps_work_line
+    call console_write
+    mov esi, apps_docs_line
+    call console_write
+    mov byte [text_color], COLOR_INFO
+    mov esi, apps_visual_line
+    call console_write
+    mov byte [text_color], COLOR_SECTION
+    mov esi, apps_fun_line
+    call console_write
+    mov byte [text_color], COLOR_SUBTLE
+    mov esi, apps_hint_line
     call console_write
     call set_body_color
     ret
@@ -795,6 +882,7 @@ run_guess_game:
     push edx
     push esi
     push edi
+    call prepare_window_surface
     mov byte [text_color], COLOR_PANEL
     mov esi, guess_top
     call console_write
@@ -814,8 +902,7 @@ run_guess_game:
     mov byte [text_color], COLOR_SECTION
     mov esi, guess_attempt_prefix
     call console_write
-    mov eax, 4
-    sub eax, [guess_attempts]
+    mov eax, [guess_attempts]
     call print_uint32
     mov byte [text_color], COLOR_SUBTLE
     mov esi, guess_attempt_suffix
@@ -901,6 +988,7 @@ run_slots_game:
     push ecx
     push edx
     push esi
+    call prepare_window_surface
     mov byte [text_color], COLOR_PANEL
     mov esi, slots_top
     call console_write
@@ -984,6 +1072,327 @@ run_slots_game:
     pop ebx
     pop eax
     ret
+run_dice_game:
+    push eax
+    push ebx
+    push ecx
+    push edx
+    push esi
+    call prepare_window_surface
+    mov byte [text_color], COLOR_PANEL
+    mov esi, dice_top
+    call console_write
+    mov esi, dice_title
+    call console_write
+    mov esi, dice_bottom
+    call console_write
+    mov ebx, 6
+    call random_mod
+    inc eax
+    mov [dice_roll_a], eax
+    mov ebx, 6
+    call random_mod
+    inc eax
+    mov [dice_roll_b], eax
+    mov byte [text_color], COLOR_INFO
+    mov esi, dice_result_prefix
+    call console_write
+    mov byte [text_color], COLOR_VALUE
+    mov eax, [dice_roll_a]
+    call print_uint32
+    mov byte [text_color], COLOR_SUBTLE
+    mov esi, dice_plus_text
+    call console_write
+    mov byte [text_color], COLOR_VALUE
+    mov eax, [dice_roll_b]
+    call print_uint32
+    mov byte [text_color], COLOR_SUBTLE
+    mov esi, dice_equals_text
+    call console_write
+    mov byte [text_color], COLOR_VALUE
+    mov eax, [dice_roll_a]
+    add eax, [dice_roll_b]
+    call print_uint32
+    mov byte [text_color], COLOR_SUBTLE
+    mov esi, newline_suffix
+    call console_write
+    mov eax, [dice_roll_a]
+    cmp eax, [dice_roll_b]
+    je .double
+    mov byte [text_color], COLOR_INFO
+    mov esi, dice_try_again_text
+    call console_write
+    jmp .out
+.double:
+    mov byte [text_color], COLOR_SUCCESS
+    mov esi, dice_double_text
+    call console_write
+.out:
+    call set_body_color
+    pop esi
+    pop edx
+    pop ecx
+    pop ebx
+    pop eax
+    ret
+run_browser_app:
+    push eax
+    push ebx
+    push ecx
+    push edx
+    push esi
+    push edi
+    call prepare_window_surface
+    mov byte [text_color], COLOR_PANEL
+    mov esi, browser_top
+    call console_write
+    mov esi, browser_title
+    call console_write
+    mov esi, browser_bottom
+    call console_write
+    call browser_show_home
+.browser_loop:
+    mov byte [text_color], COLOR_PROMPT
+    mov esi, browser_prompt
+    call console_write
+    call set_body_color
+    call read_line
+    mov esi, line_buffer
+    mov edi, cmd_browser_exit
+    call command_equals
+    test eax, eax
+    jnz .browser_done
+    mov esi, line_buffer
+    mov edi, cmd_browser_home
+    call command_equals
+    test eax, eax
+    jnz .browser_home
+    mov esi, line_buffer
+    mov edi, cmd_browser_open_prefix
+    call starts_with
+    test eax, eax
+    jnz .browser_open
+    mov byte [text_color], COLOR_ERROR
+    mov esi, browser_usage_text
+    call console_write
+    jmp .browser_loop
+.browser_home:
+    call browser_show_home
+    jmp .browser_loop
+.browser_open:
+    mov esi, line_buffer + 5
+    mov edi, browser_target_home
+    call string_equals_ci
+    test eax, eax
+    jnz .show_home_from_alias
+    mov esi, line_buffer + 5
+    mov edi, browser_target_about
+    call string_equals_ci
+    test eax, eax
+    jnz .show_about
+    mov esi, line_buffer + 5
+    mov edi, browser_target_help
+    call string_equals_ci
+    test eax, eax
+    jnz .show_help
+    mov esi, line_buffer + 5
+    mov edi, browser_target_readme
+    call string_equals_ci
+    test eax, eax
+    jnz .show_readme
+    mov esi, line_buffer + 5
+    mov edi, browser_target_status
+    call string_equals_ci
+    test eax, eax
+    jnz .show_status
+    mov esi, line_buffer + 5
+    mov edi, browser_target_notes
+    call string_equals_ci
+    test eax, eax
+    jnz .show_notes
+    mov esi, line_buffer + 5
+    call print_cached_file_contents
+    jmp .browser_loop
+.show_home_from_alias:
+    call browser_show_home
+    jmp .browser_loop
+.show_about:
+    call print_about_screen
+    jmp .browser_loop
+.show_help:
+    call print_help_screen
+    jmp .browser_loop
+.show_readme:
+    mov esi, browser_file_readme
+    call print_cached_file_contents
+    jmp .browser_loop
+.show_status:
+    mov esi, browser_file_status
+    call print_cached_file_contents
+    jmp .browser_loop
+.show_notes:
+    call print_editor_document
+    jmp .browser_loop
+.browser_done:
+    mov byte [text_color], COLOR_SUBTLE
+    mov esi, browser_exit_text
+    call console_write
+    call set_body_color
+    pop edi
+    pop esi
+    pop edx
+    pop ecx
+    pop ebx
+    pop eax
+    ret
+browser_show_home:
+    mov byte [text_color], COLOR_SECTION
+    mov esi, browser_home_url
+    call console_write
+    mov byte [text_color], COLOR_INFO
+    mov esi, browser_home_line1
+    call console_write
+    mov esi, browser_home_line2
+    call console_write
+    mov esi, browser_home_line3
+    call console_write
+    call set_body_color
+    ret
+run_docs_app:
+    push eax
+    push ebx
+    push ecx
+    push edx
+    push esi
+    push edi
+    call prepare_window_surface
+    mov byte [text_color], COLOR_PANEL
+    mov esi, docs_top
+    call console_write
+    mov esi, docs_title
+    call console_write
+    mov esi, docs_bottom
+    call console_write
+    call docs_show_catalog
+.docs_loop:
+    mov byte [text_color], COLOR_PROMPT
+    mov esi, docs_prompt
+    call console_write
+    call set_body_color
+    call read_line
+    mov esi, line_buffer
+    mov edi, cmd_docs_exit
+    call command_equals
+    test eax, eax
+    jnz .docs_done
+    mov esi, line_buffer
+    mov edi, cmd_docs_list
+    call command_equals
+    test eax, eax
+    jnz .docs_list
+    mov esi, line_buffer
+    mov edi, cmd_docs_open_prefix
+    call starts_with
+    test eax, eax
+    jnz .docs_open
+    mov byte [text_color], COLOR_ERROR
+    mov esi, docs_usage_text
+    call console_write
+    jmp .docs_loop
+.docs_list:
+    call docs_show_catalog
+    jmp .docs_loop
+.docs_open:
+    mov esi, line_buffer + 5
+    mov edi, docs_target_readme
+    call string_equals_ci
+    test eax, eax
+    jnz .open_readme
+    mov esi, line_buffer + 5
+    mov edi, docs_target_status
+    call string_equals_ci
+    test eax, eax
+    jnz .open_status
+    mov esi, line_buffer + 5
+    mov edi, docs_target_notes
+    call string_equals_ci
+    test eax, eax
+    jnz .open_notes
+    mov byte [text_color], COLOR_ERROR
+    mov esi, docs_usage_text
+    call console_write
+    jmp .docs_loop
+.open_readme:
+    mov esi, docs_file_readme
+    call print_cached_file_contents
+    jmp .docs_loop
+.open_status:
+    mov esi, docs_file_status
+    call print_cached_file_contents
+    jmp .docs_loop
+.open_notes:
+    call print_editor_document
+    jmp .docs_loop
+.docs_done:
+    mov byte [text_color], COLOR_SUBTLE
+    mov esi, docs_exit_text
+    call console_write
+    call set_body_color
+    pop edi
+    pop esi
+    pop edx
+    pop ecx
+    pop ebx
+    pop eax
+    ret
+docs_show_catalog:
+    mov byte [text_color], COLOR_SECTION
+    mov esi, docs_catalog_title
+    call console_write
+    mov byte [text_color], COLOR_FILE
+    mov esi, docs_catalog_readme
+    call console_write
+    mov esi, docs_catalog_status
+    call console_write
+    mov esi, docs_catalog_notes_prefix
+    call console_write
+    mov byte [text_color], COLOR_VALUE
+    mov eax, [editor_length]
+    call print_uint32
+    mov byte [text_color], COLOR_SUBTLE
+    mov esi, docs_catalog_notes_suffix
+    call console_write
+    call set_body_color
+    ret
+print_editor_document:
+    push eax
+    push ecx
+    push esi
+    mov byte [text_color], COLOR_PANEL
+    mov esi, notes_header
+    call console_write
+    mov eax, [editor_length]
+    test eax, eax
+    jz .empty
+    mov byte [text_color], COLOR_BODY
+    mov esi, editor_buffer
+    mov ecx, eax
+    call console_write_bytes
+    cmp byte [editor_buffer + eax - 1], 10
+    je .done
+    mov al, 10
+    call console_putc
+    jmp .done
+.empty:
+    mov byte [text_color], COLOR_SUBTLE
+    mov esi, editor_empty_text
+    call console_write
+.done:
+    call set_body_color
+    pop esi
+    pop ecx
+    pop eax
+    ret
 run_paint_app:
     push eax
     push ebx
@@ -991,6 +1400,7 @@ run_paint_app:
     push edx
     push esi
     push edi
+    call prepare_window_surface
     mov byte [text_color], COLOR_PANEL
     mov esi, paint_top
     call console_write
@@ -1032,29 +1442,40 @@ run_paint_app:
     jmp .paint_loop
 .paint_draw:
     mov esi, line_buffer + 5
-    call parse_uint32
+    call parse_uint32_token
     test edx, edx
     jz .paint_invalid
     mov ebx, eax
-    mov esi, line_buffer + 5
-    ; skip first number and whitespace
-.paint_skip_x:
+ .paint_skip_space1:
     mov al, [esi]
     cmp al, ' '
-    je .paint_skip_space1
+    je .paint_advance_space1
+    cmp al, 9
+    je .paint_advance_space1
     cmp al, 0
     je .paint_invalid
+    jmp .paint_parse_y
+ .paint_advance_space1:
     inc esi
-    jmp .paint_skip_x
-.paint_skip_space1:
-    inc esi
-    mov al, [esi]
-    cmp al, ' '
-    je .paint_skip_space1
-    call parse_uint32
+    jmp .paint_skip_space1
+ .paint_parse_y:
+    call parse_uint32_token
     test edx, edx
     jz .paint_invalid
     mov ecx, eax
+ .paint_skip_space2:
+    mov al, [esi]
+    cmp al, ' '
+    je .paint_advance_space2
+    cmp al, 9
+    je .paint_advance_space2
+    cmp al, 0
+    jne .paint_invalid
+    jmp .paint_validate
+ .paint_advance_space2:
+    inc esi
+    jmp .paint_skip_space2
+ .paint_validate:
     cmp ebx, 39
     ja .paint_invalid
     cmp ecx, 15
@@ -1137,6 +1558,7 @@ run_editor_app:
     push edx
     push esi
     push edi
+    call prepare_window_surface
     mov byte [text_color], COLOR_PANEL
     mov esi, editor_top
     call console_write
@@ -1144,7 +1566,6 @@ run_editor_app:
     call console_write
     mov esi, editor_bottom
     call console_write
-    mov dword [editor_length], 0
 .editor_loop:
     mov byte [text_color], COLOR_PROMPT
     mov esi, editor_prompt
@@ -1225,6 +1646,139 @@ run_editor_app:
     pop ebx
     pop eax
     ret
+run_calc_app:
+    push eax
+    push ebx
+    push ecx
+    push edx
+    push esi
+    push edi
+    call prepare_window_surface
+    mov byte [text_color], COLOR_PANEL
+    mov esi, calc_top
+    call console_write
+    mov esi, calc_title
+    call console_write
+    mov esi, calc_bottom
+    call console_write
+    mov byte [text_color], COLOR_SUBTLE
+    mov esi, calc_usage_text
+    call console_write
+.calc_loop:
+    mov byte [text_color], COLOR_PROMPT
+    mov esi, calc_prompt
+    call console_write
+    call set_body_color
+    call read_line
+    mov esi, line_buffer
+    mov edi, cmd_calc_exit
+    call command_equals
+    test eax, eax
+    jnz .calc_done
+    mov esi, line_buffer
+    mov edi, cmd_calc_help
+    call command_equals
+    test eax, eax
+    jnz .calc_help
+    mov esi, line_buffer
+    mov edi, cmd_calc_add_prefix
+    call starts_with
+    test eax, eax
+    jnz .calc_add
+    mov esi, line_buffer
+    mov edi, cmd_calc_sub_prefix
+    call starts_with
+    test eax, eax
+    jnz .calc_sub
+    mov esi, line_buffer
+    mov edi, cmd_calc_mul_prefix
+    call starts_with
+    test eax, eax
+    jnz .calc_mul
+    mov esi, line_buffer
+    mov edi, cmd_calc_div_prefix
+    call starts_with
+    test eax, eax
+    jnz .calc_div
+    mov byte [text_color], COLOR_ERROR
+    mov esi, calc_invalid_text
+    call console_write
+    jmp .calc_loop
+.calc_help:
+    mov byte [text_color], COLOR_SUBTLE
+    mov esi, calc_usage_text
+    call console_write
+    jmp .calc_loop
+.calc_add:
+    mov esi, line_buffer + 4
+    call parse_two_uint32_args
+    test edx, edx
+    jz .calc_invalid
+    add eax, ebx
+    jmp .calc_print
+.calc_sub:
+    mov esi, line_buffer + 4
+    call parse_two_uint32_args
+    test edx, edx
+    jz .calc_invalid
+    cmp eax, ebx
+    jb .calc_negative
+    sub eax, ebx
+    jmp .calc_print
+.calc_mul:
+    mov esi, line_buffer + 4
+    call parse_two_uint32_args
+    test edx, edx
+    jz .calc_invalid
+    imul eax, ebx
+    jmp .calc_print
+.calc_div:
+    mov esi, line_buffer + 4
+    call parse_two_uint32_args
+    test edx, edx
+    jz .calc_invalid
+    test ebx, ebx
+    jz .calc_div_zero
+    xor edx, edx
+    div ebx
+    jmp .calc_print
+.calc_invalid:
+    mov byte [text_color], COLOR_ERROR
+    mov esi, calc_invalid_text
+    call console_write
+    jmp .calc_loop
+.calc_negative:
+    mov byte [text_color], COLOR_ERROR
+    mov esi, calc_negative_text
+    call console_write
+    jmp .calc_loop
+.calc_div_zero:
+    mov byte [text_color], COLOR_ERROR
+    mov esi, calc_div_zero_text
+    call console_write
+    jmp .calc_loop
+.calc_print:
+    mov byte [text_color], COLOR_INFO
+    mov esi, calc_result_prefix
+    call console_write
+    mov byte [text_color], COLOR_VALUE
+    call print_uint32
+    mov byte [text_color], COLOR_SUBTLE
+    mov esi, newline_suffix
+    call console_write
+    jmp .calc_loop
+.calc_done:
+    mov byte [text_color], COLOR_SUBTLE
+    mov esi, calc_exit_text
+    call console_write
+    call set_body_color
+    pop edi
+    pop esi
+    pop edx
+    pop ecx
+    pop ebx
+    pop eax
+    ret
 string_length:
     push ecx
     push esi
@@ -1248,6 +1802,15 @@ run_search:
     push edx
     push esi
     push edi
+    call prepare_window_surface
+    mov byte [text_color], COLOR_PANEL
+    mov esi, search_top
+    call console_write
+    mov esi, search_title
+    call console_write
+    mov esi, search_bottom
+    call console_write
+    mov esi, [esp + 4]
 .skip_space:
     cmp byte [esi], ' '
     je .advance
@@ -1261,16 +1824,14 @@ run_search:
     je .usage
     mov [search_query_ptr], esi
     mov dword [search_total_hits], 0
-    mov byte [text_color], COLOR_PANEL
-    mov esi, search_top
-    call console_write
-    mov esi, search_title_prefix
+    mov byte [text_color], COLOR_INFO
+    mov esi, search_query_prefix
     call console_write
     mov byte [text_color], COLOR_SECTION
     mov esi, [search_query_ptr]
     call console_write
-    mov byte [text_color], COLOR_PANEL
-    mov esi, search_title_suffix
+    mov byte [text_color], COLOR_SUBTLE
+    mov esi, newline_suffix
     call console_write
     mov byte [text_color], COLOR_SECTION
     mov esi, search_commands_header
@@ -1415,7 +1976,7 @@ run_search:
     call console_write
     jmp .out
 .usage:
-    mov byte [text_color], COLOR_SECTION
+    mov byte [text_color], COLOR_SUBTLE
     mov esi, search_usage_text
     call console_write
 .out:
@@ -1428,10 +1989,15 @@ run_search:
     pop eax
     ret
 print_memory_report:
-    mov byte [text_color], COLOR_SECTION
-    mov esi, mem_header
+    call prepare_window_surface
+    mov byte [text_color], COLOR_PANEL
+    mov esi, report_top
     call console_write
-    call set_body_color
+    mov esi, mem_title
+    call console_write
+    mov esi, report_bottom
+    call console_write
+    mov byte [text_color], COLOR_SECTION
     cmp dword [BOOT_INFO_ADDR], BOOTINFO_MAGIC
     jne .missing
     mov byte [text_color], COLOR_INFO
@@ -1462,14 +2028,27 @@ print_memory_report:
     mov esi, kb_suffix
     call console_write
     call set_body_color
-    call print_heap_report
+    mov byte [text_color], COLOR_PANEL
+    mov esi, heap_inline_title
+    call console_write
+    call print_heap_details
+    call set_body_color
     ret
 .missing:
     mov byte [text_color], COLOR_ERROR
     mov esi, mem_missing
     call console_write
+    call set_body_color
     ret
 print_root_directory:
+    call prepare_window_surface
+    mov byte [text_color], COLOR_PANEL
+    mov esi, report_top
+    call console_write
+    mov esi, ls_title
+    call console_write
+    mov esi, report_bottom
+    call console_write
     cmp dword [BOOT_INFO_ADDR], BOOTINFO_MAGIC
     jne .missing
     mov ebx, [BOOT_INFO_ADDR + BOOTINFO_ROOTDIR_ADDR]
@@ -1478,10 +2057,6 @@ print_root_directory:
     jz .missing
     test ecx, ecx
     jz .empty
-    mov byte [text_color], COLOR_SECTION
-    mov esi, ls_header
-    call console_write
-    call set_body_color
     xor edx, edx
 .next_entry:
     test ecx, ecx
@@ -1526,24 +2101,31 @@ print_root_directory:
     mov byte [text_color], COLOR_SUBTLE
     mov esi, ls_empty
     call console_write
+    call set_body_color
     ret
 .missing:
     mov byte [text_color], COLOR_ERROR
     mov esi, ls_missing
     call console_write
+    call set_body_color
 .done:
+    call set_body_color
     ret
 print_cached_files_report:
+    call prepare_window_surface
+    mov byte [text_color], COLOR_PANEL
+    mov esi, report_top
+    call console_write
+    mov esi, files_title
+    call console_write
+    mov esi, report_bottom
+    call console_write
     cmp dword [BOOT_INFO_ADDR], BOOTINFO_MAGIC
     jne .missing
     mov ecx, [BOOT_INFO_ADDR + BOOTINFO_FILE_COUNT]
     test ecx, ecx
     jz .empty
     mov ebx, [BOOT_INFO_ADDR + BOOTINFO_FILE_TABLE_ADDR]
-    mov byte [text_color], COLOR_SECTION
-    mov esi, files_header
-    call console_write
-    call set_body_color
 .next:
     push ecx
     push ebx
@@ -1565,16 +2147,19 @@ print_cached_files_report:
     add ebx, FILE_CACHE_ENTRY_SIZE
     dec ecx
     jnz .next
+    call set_body_color
     ret
 .empty:
     mov byte [text_color], COLOR_SUBTLE
     mov esi, files_empty
     call console_write
+    call set_body_color
     ret
 .missing:
     mov byte [text_color], COLOR_ERROR
     mov esi, files_missing
     call console_write
+    call set_body_color
     ret
 print_cached_file_contents:
     push eax
@@ -1660,10 +2245,15 @@ find_cached_file:
     pop ebx
     ret
 print_timer_report:
-    mov byte [text_color], COLOR_SECTION
-    mov esi, ticks_header
+    call prepare_window_surface
+    mov byte [text_color], COLOR_PANEL
+    mov esi, report_top
     call console_write
-    call set_body_color
+    mov esi, ticks_title
+    call console_write
+    mov esi, report_bottom
+    call console_write
+    mov byte [text_color], COLOR_SECTION
     mov byte [text_color], COLOR_INFO
     mov esi, ticks_prefix
     call console_write
@@ -1685,16 +2275,22 @@ print_timer_report:
     mov byte [text_color], COLOR_SUBTLE
     mov esi, seconds_suffix
     call console_write
+    call set_body_color
     ret
 print_vmem_report:
     push eax
     push ebx
     push ecx
     push edx
-    mov byte [text_color], COLOR_SECTION
-    mov esi, vmem_header
+    call prepare_window_surface
+    mov byte [text_color], COLOR_PANEL
+    mov esi, report_top
     call console_write
-    call set_body_color
+    mov esi, vmem_title
+    call console_write
+    mov esi, report_bottom
+    call console_write
+    mov byte [text_color], COLOR_SECTION
     mov byte [text_color], COLOR_INFO
     mov esi, vmem_present_prefix
     call console_write
@@ -1770,6 +2366,7 @@ print_vmem_report:
     call console_write
     mov eax, [first_page_table + ((0x1000 >> 12) * 4)]
     call print_page_state
+    call set_body_color
     pop edx
     pop ecx
     pop ebx
@@ -1892,10 +2489,15 @@ update_heap_high_water:
     pop ebx
     ret
 print_heap_report:
-    mov byte [text_color], COLOR_SECTION
-    mov esi, heap_header
+    call prepare_window_surface
+    mov byte [text_color], COLOR_PANEL
+    mov esi, report_top
     call console_write
-    call set_body_color
+    mov esi, heap_title
+    call console_write
+    mov esi, report_bottom
+    call console_write
+print_heap_details:
     mov byte [text_color], COLOR_INFO
     mov esi, heap_start_prefix
     call console_write
@@ -1952,6 +2554,7 @@ print_heap_report:
     mov byte [text_color], COLOR_SUBTLE
     mov esi, newline_suffix
     call console_write
+    call set_body_color
     ret
 kfree:
     push eax
@@ -2344,6 +2947,151 @@ parse_uint32:
     xor eax, eax
     xor edx, edx
     ret
+parse_uint32_token:
+    push ebx
+    push ecx
+    xor eax, eax
+    xor edx, edx
+.skip_space:
+    mov bl, [esi]
+    cmp bl, ' '
+    je .advance_space
+    cmp bl, 9
+    je .advance_space
+    jmp .prefix_check
+.advance_space:
+    inc esi
+    jmp .skip_space
+.prefix_check:
+    mov bl, [esi]
+    cmp bl, '0'
+    jne .decimal
+    mov bl, [esi + 1]
+    cmp bl, 'x'
+    je .hex_start
+    cmp bl, 'X'
+    je .hex_start
+.decimal:
+    xor ecx, ecx
+.decimal_loop:
+    mov bl, [esi]
+    test bl, bl
+    jz .done
+    cmp bl, ' '
+    je .done
+    cmp bl, 9
+    je .done
+    cmp bl, '0'
+    jb .fail
+    cmp bl, '9'
+    ja .fail
+    imul eax, eax, 10
+    movzx ebx, bl
+    sub ebx, '0'
+    add eax, ebx
+    inc esi
+    inc ecx
+    jmp .decimal_loop
+.hex_start:
+    add esi, 2
+    xor ecx, ecx
+.hex_loop:
+    mov bl, [esi]
+    test bl, bl
+    jz .done
+    cmp bl, ' '
+    je .done
+    cmp bl, 9
+    je .done
+    cmp bl, '0'
+    jb .fail
+    cmp bl, '9'
+    jbe .hex_digit
+    cmp bl, 'A'
+    jb .hex_lower
+    cmp bl, 'F'
+    jbe .hex_upper
+.hex_lower:
+    cmp bl, 'a'
+    jb .fail
+    cmp bl, 'f'
+    ja .fail
+    movzx ebx, bl
+    sub ebx, 'a' - 10
+    jmp .hex_apply
+.hex_upper:
+    movzx ebx, bl
+    sub ebx, 'A' - 10
+    jmp .hex_apply
+.hex_digit:
+    movzx ebx, bl
+    sub ebx, '0'
+.hex_apply:
+    shl eax, 4
+    add eax, ebx
+    inc esi
+    inc ecx
+    jmp .hex_loop
+.done:
+    test ecx, ecx
+    jz .fail
+    mov edx, 1
+    pop ecx
+    pop ebx
+    ret
+.fail:
+    xor eax, eax
+    xor edx, edx
+    pop ecx
+    pop ebx
+    ret
+parse_two_uint32_args:
+    push ecx
+    push edi
+    call parse_uint32_token
+    test edx, edx
+    jz .fail
+    mov edi, eax
+.skip_space1:
+    mov al, [esi]
+    cmp al, ' '
+    je .advance_space1
+    cmp al, 9
+    je .advance_space1
+    cmp al, 0
+    je .fail
+    jmp .parse_second
+.advance_space1:
+    inc esi
+    jmp .skip_space1
+.parse_second:
+    call parse_uint32_token
+    test edx, edx
+    jz .fail
+    mov ebx, eax
+.skip_trailing:
+    mov al, [esi]
+    cmp al, ' '
+    je .advance_trailing
+    cmp al, 9
+    je .advance_trailing
+    cmp al, 0
+    jne .fail
+    mov eax, edi
+    mov edx, 1
+    pop edi
+    pop ecx
+    ret
+.advance_trailing:
+    inc esi
+    jmp .skip_trailing
+.fail:
+    xor eax, eax
+    xor ebx, ebx
+    xor edx, edx
+    pop edi
+    pop ecx
+    ret
 string_equals_ci:
     push ebx
     push esi
@@ -2515,6 +3263,15 @@ console_write_bytes:
     pop eax
     ret
 print_uptime_report:
+    call prepare_window_surface
+    mov byte [text_color], COLOR_PANEL
+    mov esi, report_top
+    call console_write
+    mov esi, uptime_title
+    call console_write
+    mov esi, report_bottom
+    call console_write
+    mov byte [text_color], COLOR_INFO
     mov eax, [timer_ticks]
     xor edx, edx
     mov ebx, TIMER_HZ
@@ -2535,8 +3292,10 @@ print_uptime_report:
     call console_putc
     mov eax, [uptime_millis]
     call print_uint32_3pad
+    mov byte [text_color], COLOR_SUBTLE
     mov esi, seconds_suffix
     call console_write
+    call set_body_color
     ret
 print_fat_name:
     push eax
@@ -3029,7 +3788,7 @@ idt_end:
 idtr:
     dw idt_end - idt_start - 1
     dd idt_start
-text_color:        db 0x0F
+text_color:        db COLOR_BODY
 serial_shadow:     db 0
 cursor_row:        dd 0
 cursor_col:        dd 0
@@ -3052,10 +3811,12 @@ kbd_alt:           db 0
 last_make_scancode: db 0
 last_make_tick:    dd 0
 kbd_queue:         times KBD_QUEUE_SIZE db 0
-banner_top:        db '==============================================================', 10, 0
-banner_title:      db 'Lum-OS kernel online (32-bit protected mode)', 10, 0
-banner_mid:        db ' Protected mode shell with VGA, serial, IRQ keyboard, paging, heap.', 10, 0
-banner_bottom:     db '==============================================================', 10, 0
+menu_bar:          db ' Lum-OS   Studio   Pulse   Archive   Inkboard   Loom   Forge   Arcade ', 10, 0
+menu_rule:         db ' ----------------------------------------------------------------------', 10, 0
+banner_top:        db ' .------------------------------------------------------------.', 10, 0
+banner_title:      db ' | Lum-OS Studio                                               |', 10, 0
+banner_mid:        db ' | A calm text workspace for notes, archives, sketching, play |', 10, 0
+banner_bottom:     db ' .------------------------------------------------------------.', 10, 0
 boot_ok_message:   db '[ok] Boot path complete: FAT12 -> stage2 -> protected mode -> kernel', 10, 0
 shell_hint:        db 'Type help. Input works from the QEMU keyboard or the serial console.', 10, 10, 0
 exception_prefix:  db '[EXCEPTION] vector=', 0
@@ -3066,34 +3827,45 @@ exception_halt_suffix: db ' System halted.', 10, 0
 readonly_page:     db 'Lum-OS read-only guard page', 0
 prompt:            db 'lum> ', 0
 unknown_prefix:    db 'Unknown command: ', 0
-help_text:         db 'Commands: help, about, clear, mem, ls, files, heap, ticks, uptime, vmem, alloc <bytes>, free <addr>, memtest, echo <text>, cat <file>, games, search <text>, paint, editor, reboot, halt', 10, 0
-help_top:          db '=================== HELP ===================', 10, 0
-help_title:        db 'Available shell commands and categories', 10, 0
-help_bottom:       db '============================================', 10, 0
+help_text:         db 'Commands: help, about, clear, mem, ls, files, heap, ticks, uptime, vmem, apps, games, docs, calc, guess, slots, dice, search <text>, browser, paint, editor, reboot, halt', 10, 0
+help_top:          db ' .------------------------------------------------------------.', 10, 0
+help_title:        db ' | Field Guide                                                 |', 10, 0
+help_bottom:       db ' .------------------------------------------------------------.', 10, 0
 help_core_line:    db ' core: help, about, clear, mem, ls, files, heap, ticks, uptime, vmem', 10, 0
 help_inspect_line: db ' inspect: alloc <bytes>, free <addr>, cat <file>, search <text>', 10, 0
 help_files_line:   db ' files: ls, files, cat <file>', 10, 0
 help_memory_line:  db ' memory: mem, alloc, free, memtest', 10, 0
-help_hint_line:    db 'Hint: type games for puzzles, paint for drawing, editor for text.', 10, 0
-about_top:         db '=================== ABOUT ===================', 10, 0
-about_title:       db 'Lum-OS capabilities', 10, 0
-about_bottom:      db '============================================', 10, 0
+help_apps_line:    db ' apps: apps, browser, docs, editor, paint, calc, guess, slots, dice', 10, 0
+help_hint_line:    db 'Hint: write in inkboard, open notes in archive/pulse, and sketch in loom.', 10, 0
+about_top:         db ' .------------------------------------------------------------.', 10, 0
+about_title:       db ' | Core Atlas                                                  |', 10, 0
+about_bottom:      db ' .------------------------------------------------------------.', 10, 0
 about_boot_line:   db ' boot: FAT12 -> stage2 -> protected mode', 10, 0
 about_input_line:  db ' input: IRQ keyboard + serial console', 10, 0
 about_video_line:  db ' video: VGA text + serial output', 10, 0
 about_memory_line: db ' memory: paging, heap, guard pages', 10, 0
 about_files_line:  db ' files: floppy cache access, low-level shell I/O', 10, 0
-games_top:         db '=================== GAMES ===================', 10, 0
-games_title:       db 'Shell mini-games', 10, 0
-games_bottom:      db '============================================', 10, 0
+games_top:         db ' .------------------------------------------------------------.', 10, 0
+games_title:       db ' | Arcade Deck                                                 |', 10, 0
+games_bottom:      db ' .------------------------------------------------------------.', 10, 0
 games_guess_line:  db ' guess      : play the number guess game', 10, 0
 games_slots_line:  db ' slots      : spin three random symbols', 10, 0
-games_search_line: db ' search <q> : search command names by substring', 10, 0
-games_hint_line:   db 'Try paint or editor for simple apps too.', 10, 0
+games_dice_line:   db ' dice       : roll two dice and chase doubles', 10, 0
+games_apps_line:   db ' apps       : open pulse, archive, inkboard, loom, and forge', 10, 0
+games_hint_line:   db 'Hint: pulse and archive can both open your inkboard notes.', 10, 0
 
-guess_top:         db '=================== GUESS ===================', 10, 0
-guess_title:       db 'Guess the number from 1 to 9', 10, 0
-guess_bottom:      db '============================================', 10, 0
+apps_top:          db ' .------------------------------------------------------------.', 10, 0
+apps_title:        db ' | Studio Deck                                                 |', 10, 0
+apps_bottom:       db ' .------------------------------------------------------------.', 10, 0
+apps_work_line:    db ' work: browser (Pulse), docs (Archive), editor (Inkboard), calc (Forge)', 10, 0
+apps_docs_line:    db ' docs: README.TXT, STATUS.TXT, and live session notes', 10, 0
+apps_visual_line:  db ' visual: paint opens Pixel Loom with a 40x16 ASCII canvas', 10, 0
+apps_fun_line:     db ' fun: games, guess, slots, dice', 10, 0
+apps_hint_line:    db 'Tip: write in inkboard, then open notes in archive or pulse.', 10, 0
+
+guess_top:         db ' .------------------------------------------------------------.', 10, 0
+guess_title:       db ' | Hidden Number                                               |', 10, 0
+guess_bottom:      db ' .------------------------------------------------------------.', 10, 0
 guess_intro_line:  db 'You have 3 tries. Enter 0 to cancel.', 10, 0
 guess_secret:      dd 0
 guess_attempts:    dd 0
@@ -3110,9 +3882,9 @@ guess_lose_prefix: db 'You lost. The number was ', 0
 guess_lose_suffix: db '.', 10, 0
 guess_cancel_text: db 'Guess cancelled.', 10, 0
 
-slots_top:         db '=================== SLOTS ===================', 10, 0
-slots_title:       db 'Spin the reels and match symbols', 10, 0
-slots_bottom:      db '============================================', 10, 0
+slots_top:         db ' .------------------------------------------------------------.', 10, 0
+slots_title:       db ' | Star Reels                                                  |', 10, 0
+slots_bottom:      db ' .------------------------------------------------------------.', 10, 0
 slots_result_prefix: db 'Result: ', 0
 slots_left_bracket: db '[', 0
 slots_mid_bracket:  db ' ', 0
@@ -3125,9 +3897,57 @@ slots_reel_a:      dd 0
 slots_reel_b:      dd 0
 slots_reel_c:      dd 0
 
-paint_top:         db '=================== PAINT ===================', 10, 0
-paint_title:       db 'Simple text canvas: draw x y', 10, 0
-paint_bottom:      db '============================================', 10, 0
+dice_top:          db ' .------------------------------------------------------------.', 10, 0
+dice_title:        db ' | Twin Dice                                                   |', 10, 0
+dice_bottom:       db ' .------------------------------------------------------------.', 10, 0
+dice_result_prefix: db 'Roll: ', 0
+dice_plus_text:    db ' + ', 0
+dice_equals_text:  db ' = ', 0
+dice_double_text:  db 'Double! Both dice matched.', 10, 0
+dice_try_again_text: db 'No double this time. Roll again.', 10, 0
+dice_roll_a:       dd 0
+dice_roll_b:       dd 0
+
+browser_top:       db ' .------------------------------------------------------------.', 10, 0
+browser_title:     db ' | Pulse Browser                                               |', 10, 0
+browser_bottom:    db ' .------------------------------------------------------------.', 10, 0
+browser_prompt:    db 'web> ', 0
+browser_usage_text: db 'Commands: open <home|readme|status|notes|about|help>, .home, .exit', 10, 0
+browser_exit_text: db 'Closing browser.', 10, 0
+browser_home_url:  db 'lum://home', 10, 0
+browser_home_line1: db 'Open about/help for system pages or readme/status/notes for archive pages.', 10, 0
+browser_home_line2: db 'Examples: open readme, open notes, open about', 10, 0
+browser_home_line3: db 'Pulse is a tiny shell browser over cached content, not a network stack.', 10, 0
+browser_target_home: db 'home', 0
+browser_target_about: db 'about', 0
+browser_target_help: db 'help', 0
+browser_target_readme: db 'readme', 0
+browser_target_status: db 'status', 0
+browser_target_notes: db 'notes', 0
+browser_file_readme: db 'README.TXT', 0
+browser_file_status: db 'STATUS.TXT', 0
+
+docs_top:          db ' .------------------------------------------------------------.', 10, 0
+docs_title:        db ' | Archive Room                                                |', 10, 0
+docs_bottom:       db ' .------------------------------------------------------------.', 10, 0
+docs_prompt:       db 'docs> ', 0
+docs_usage_text:   db 'Commands: open <readme|status|notes>, .list, .exit', 10, 0
+docs_exit_text:    db 'Closing docs.', 10, 0
+docs_catalog_title: db 'Archive entries:', 10, 0
+docs_catalog_readme: db ' - README.TXT  cached boot-time note', 10, 0
+docs_catalog_status: db ' - STATUS.TXT  cached project status', 10, 0
+docs_catalog_notes_prefix: db ' - NOTES.TXT   live editor notes (bytes=', 0
+docs_catalog_notes_suffix: db ')', 10, 0
+docs_target_readme: db 'readme', 0
+docs_target_status: db 'status', 0
+docs_target_notes:  db 'notes', 0
+docs_file_readme:   db 'README.TXT', 0
+docs_file_status:   db 'STATUS.TXT', 0
+notes_header:       db '--- NOTES.TXT ---', 10, 0
+
+paint_top:         db ' .------------------------------------------------------------.', 10, 0
+paint_title:       db ' | Pixel Loom                                                  |', 10, 0
+paint_bottom:      db ' .------------------------------------------------------------.', 10, 0
 paint_prompt:      db 'paint> ', 0
 paint_usage_text:  db 'Commands: draw x y, .show, .clear, .exit', 10, 0
 paint_invalid_text: db 'Invalid coordinates. Use x 0-39 y 0-15.', 10, 0
@@ -3136,9 +3956,9 @@ paint_cleared_text: db 'Canvas cleared.', 10, 0
 paint_exit_text:   db 'Exiting paint.', 10, 0
 paint_buffer:      times 640 db ' '
 
-editor_top:        db '=================== EDITOR ==================', 10, 0
-editor_title:      db 'Line editor: add lines, .show, .clear, .exit', 10, 0
-editor_bottom:     db '============================================', 10, 0
+editor_top:        db ' .------------------------------------------------------------.', 10, 0
+editor_title:      db ' | Inkboard                                                    |', 10, 0
+editor_bottom:     db ' .------------------------------------------------------------.', 10, 0
 editor_prompt:     db 'edit> ', 0
 editor_append_text: db 'Line appended.', 10, 0
 editor_full_text:  db 'Editor full. Maximum 2047 chars.', 10, 0
@@ -3147,24 +3967,48 @@ editor_cleared_text: db 'Editor cleared.', 10, 0
 editor_exit_text:  db 'Exiting editor.', 10, 0
 editor_buffer:     times 2048 db 0
 editor_length:     dd 0
-banner_meta:       db 'Protected mode kernel, VGA + serial console, IRQ keyboard, paging, heap.', 10, 0
-banner_hint:       db 'Use help to list commands. QEMU keyboard and serial input are active.', 10, 10, 0
-shell_ready_hint:  db 'Shell ready. Type help for commands.', 10, 0
 
-search_top:              db '=================== SEARCH ==================', 10, 0
+calc_top:          db ' .------------------------------------------------------------.', 10, 0
+calc_title:        db ' | Number Forge                                                |', 10, 0
+calc_bottom:       db ' .------------------------------------------------------------.', 10, 0
+calc_prompt:       db 'calc> ', 0
+calc_usage_text:   db 'Use: add a b, sub a b, mul a b, div a b, .exit', 10, 0
+calc_invalid_text: db 'Invalid calc command. Example: add 7 5', 10, 0
+calc_negative_text: db 'Sub needs left >= right in this unsigned calculator.', 10, 0
+calc_div_zero_text: db 'Division by zero is not allowed.', 10, 0
+calc_result_prefix: db 'Result: ', 0
+calc_exit_text:    db 'Closing calc.', 10, 0
+banner_meta:       db ' | Tip: start with apps, then open notes in archive or pulse. |', 10, 0
+banner_hint:       db ' | Dock: Studio  Pulse  Archive  Inkboard  Loom  Forge Arcade |', 10, 10, 0
+shell_ready_hint:  db 'Shell ready. Type apps or help to begin.', 10, 0
+
+report_top:              db ' .------------------------------------------------------------.', 10, 0
+report_bottom:           db ' .------------------------------------------------------------.', 10, 0
+search_top:              db ' .------------------------------------------------------------.', 10, 0
+search_title:            db ' | Signal Finder                                               |', 10, 0
+search_bottom:           db ' .------------------------------------------------------------.', 10, 0
+search_query_prefix:     db ' query: ', 0
 search_title_prefix:     db 'Search query: ', 0
 search_title_suffix:     db 10, 0
-search_commands_header:  db 'Matching commands:', 10, 0
-search_files_header:     db 'Matching cached files:', 10, 0
-search_text_header:      db 'Matching text lines:', 10, 0
-search_none_text:        db 'No matches found.', 10, 0
+search_commands_header:  db 'Command hits:', 10, 0
+search_files_header:     db 'Archive hits:', 10, 0
+search_text_header:      db 'Text hits:', 10, 0
+search_none_text:        db 'No signals found.', 10, 0
 search_size_prefix:      db ' Size: ', 0
 search_text_hit_suffix:  db ' <-- match', 10, 0
-search_total_prefix:     db 'Total hits: ', 0
+search_total_prefix:     db 'Signal count: ', 0
 search_total_suffix:     db 10, 0
 search_usage_text:       db 'Usage: search <query>', 10, 0
 list_bullet:             db ' - ', 0
 
+mem_title:               db ' | Memory Atlas                                                |', 10, 0
+heap_title:              db ' | Heap Ledger                                                 |', 10, 0
+heap_inline_title:       db 10, ' heap ledger snapshot:', 10, 0
+ticks_title:             db ' | Clock Ledger                                                |', 10, 0
+uptime_title:            db ' | Uptime Ledger                                               |', 10, 0
+vmem_title:              db ' | Page Atlas                                                  |', 10, 0
+ls_title:                db ' | Root Ledger                                                 |', 10, 0
+files_title:             db ' | Cache Ledger                                                |', 10, 0
 mem_header:              db 'Memory report:', 10, 0
 heap_header:             db 'Heap allocator report:', 10, 0
 ticks_header:            db 'Timer tick report:', 10, 0
@@ -3232,11 +4076,22 @@ cmd_free_prefix:   db 'free ', 0
 cmd_memtest:       db 'memtest', 0
 cmd_reboot:        db 'reboot', 0
 cmd_halt:          db 'halt', 0
+cmd_apps:          db 'apps', 0
 cmd_games:         db 'games', 0
+cmd_docs:          db 'docs', 0
+cmd_calc:          db 'calc', 0
 cmd_guess:         db 'guess', 0
 cmd_slots:         db 'slots', 0
+cmd_dice:          db 'dice', 0
 cmd_search:        db 'search', 0
 cmd_search_prefix: db 'search ', 0
+cmd_browser:       db 'browser', 0
+cmd_browser_open_prefix: db 'open ', 0
+cmd_browser_home:  db '.home', 0
+cmd_browser_exit:  db '.exit', 0
+cmd_docs_open_prefix: db 'open ', 0
+cmd_docs_list:     db '.list', 0
+cmd_docs_exit:     db '.exit', 0
 cmd_paint:         db 'paint', 0
 cmd_paint_show:    db '.show', 0
 cmd_paint_clear:   db '.clear', 0
@@ -3246,6 +4101,12 @@ cmd_editor:        db 'editor', 0
 cmd_editor_show:   db '.show', 0
 cmd_editor_clear:  db '.clear', 0
 cmd_editor_exit:   db '.exit', 0
+cmd_calc_help:     db '.help', 0
+cmd_calc_exit:     db '.exit', 0
+cmd_calc_add_prefix: db 'add ', 0
+cmd_calc_sub_prefix: db 'sub ', 0
+cmd_calc_mul_prefix: db 'mul ', 0
+cmd_calc_div_prefix: db 'div ', 0
 search_query_ptr:  dd 0
 search_total_hits: dd 0
 search_command_table:
@@ -3266,12 +4127,18 @@ search_command_table:
     dd cmd_memtest
     dd cmd_reboot
     dd cmd_halt
+    dd cmd_apps
     dd cmd_games
+    dd cmd_docs
+    dd cmd_calc
     dd cmd_guess
     dd cmd_slots
+    dd cmd_dice
     dd cmd_search
+    dd cmd_browser
     dd cmd_paint
     dd cmd_editor
+    dd 0
 rng_state:        dd 0
 slots_symbol_table:
     dd slot_symbol_0
@@ -3287,7 +4154,7 @@ slot_symbol_2:     db '%', 0
 slot_symbol_3:     db '&', 0
 slot_symbol_4:     db '*', 0
 slot_symbol_5:     db '+', 0
-    db 0, 27, '1', '2', '3', '4', '5', '6', '7', '8', '9', '0', '\'', 0xA1, 8, 9
+    db 0, 27, '1', '2', '3', '4', '5', '6', '7', '8', '9', '0', 0x27, 0xA1, 8, 9
     db 'q', 'w', 'e', 'r', 't', 'y', 'u', 'i', 'o', 'p', '`', '+', 10, 0
     db 'a', 's', 'd', 'f', 'g', 'h', 'j', 'k', 'l', 0xA4, 0xB4, 0x87, 0, 0
     db 'z', 'x', 'c', 'v', 'b', 'n', 'm', ',', '.', '-', 0, '*', 0, ' '

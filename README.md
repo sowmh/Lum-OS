@@ -18,13 +18,14 @@ The project is intentionally educational: the goal is a clean, understandable bo
 - 32-bit kernel with:
   - VGA text output
   - serial console mirroring
+  - a light desktop-style shell with a top bar, windowed panels, and named app spaces
   - exception stubs for vectors `0-31`
   - PIC remap and PIT timer setup
   - IRQ-backed keyboard input queue
   - bootstrap paging with guard pages
   - free-list heap allocator with split and coalescing
   - frame bitmap bootstrap reservations
-  - interactive shell commands
+  - interactive shell commands, mini-games, and toy apps
 - Portable Python image builder for FAT12 floppy images
 - Automated QEMU smoke test
 
@@ -40,6 +41,17 @@ The project is intentionally educational: the goal is a clean, understandable bo
 - `ticks`
 - `uptime`
 - `vmem`
+- `apps`
+- `games`
+- `docs`
+- `calc`
+- `guess`
+- `slots`
+- `dice`
+- `search <text>`
+- `browser`
+- `paint`
+- `editor`
 - `alloc <bytes>`
 - `free <addr>`
 - `memtest`
@@ -49,6 +61,15 @@ The project is intentionally educational: the goal is a clean, understandable bo
 - `halt`
 
 `alloc` and `free` accept decimal and hexadecimal values such as `256` or `0x100`.
+
+Mini-app notes:
+
+- `apps` is a launcher-style overview of the visible shell apps in the Studio Deck
+- `browser` is a small local shell browser for cached docs and built-in pages, surfaced as `Pulse Browser`
+- `docs` is a document hub for cached files plus the live notes buffer from `editor`, surfaced as `Archive Room`
+- `calc` is a tiny integer calculator with `add`, `sub`, `mul`, and `div`, surfaced as `Number Forge`
+- `paint` is a 40x16 ASCII canvas with `draw x y`, `.show`, `.clear`, and `.exit`, surfaced as `Pixel Loom`
+- `editor` is a tiny line editor with `.show`, `.clear`, and `.exit`; its notes can be opened later from `docs` or `browser`, surfaced as `Inkboard`
 
 ## Requirements
 
@@ -136,7 +157,18 @@ make clean
 - `about`
 - `vmem`
 - `files`
+- `apps`
+- `games`
+- `docs`
+- `calc`
+- `search`
+- `slots`
+- `dice`
+- `guess`
 - `cat`
+- `browser`
+- `paint`
+- `editor`
 - `heap`
 - `alloc`
 - `free`

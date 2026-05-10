@@ -11,7 +11,7 @@ BOOT_FRAGMENTS = [
     b"Loading kernel.bin from FAT12...",
     b"Kernel loaded successfully.",
     b"Switching to 32-bit protected mode...",
-    b"Lum-OS kernel online",
+    b"Lum-OS Studio",
     b"lum> ",
 ]
 def parse_args() -> argparse.Namespace:
@@ -93,7 +93,7 @@ def main() -> int:
         help_output = expect_command_output(
             sock,
             b"help\n",
-            [b"Commands: help, about, clear, mem, ls, files, heap, ticks, uptime, vmem, alloc <bytes>, free <addr>, memtest, echo <text>, cat <file>, reboot, halt", b"lum> "],
+            [b"Field Guide", b"apps: apps, browser, docs, editor, paint, calc, guess, slots, dice", b"lum> "],
             args.timeout,
         )
         print("[smoke] help command passed")
@@ -101,7 +101,7 @@ def main() -> int:
         about_output = expect_command_output(
             sock,
             b"about\n",
-            [b"PIC/PIT/keyboard interrupts", b"cached floppy files readable from the shell.", b"lum> "],
+            [b"Core Atlas", b"input: IRQ keyboard + serial console", b"files: floppy cache access, low-level shell I/O", b"lum> "],
             args.timeout,
         )
         print("[smoke] about command passed")
@@ -109,7 +109,7 @@ def main() -> int:
         vmem_output = expect_command_output(
             sock,
             b"vmem\n",
-            [b"VM pages present:", b"Frames reserved:", b"Readonly guard 0x1000: read-only", b"lum> "],
+            [b"Page Atlas", b"VM pages present:", b"Frames reserved:", b"Readonly guard 0x1000: read-only", b"lum> "],
             args.timeout,
         )
         print("[smoke] vmem command passed")
@@ -117,11 +117,55 @@ def main() -> int:
         files_output = expect_command_output(
             sock,
             b"files\n",
-            [b"Cached files:", b"README.TXT", b"STATUS.TXT", b"lum> "],
+            [b"Cache Ledger", b"README.TXT", b"STATUS.TXT", b"lum> "],
             args.timeout,
         )
         print("[smoke] files command passed")
         print(files_output.decode("latin1", errors="replace"))
+        apps_output = expect_command_output(
+            sock,
+            b"apps\n",
+            [b"Studio Deck", b"browser (Pulse), docs (Archive), editor (Inkboard), calc (Forge)", b"lum> "],
+            args.timeout,
+        )
+        print("[smoke] apps command passed")
+        print(apps_output.decode("latin1", errors="replace"))
+        games_output = expect_command_output(
+            sock,
+            b"games\n",
+            [b"Arcade Deck", b"guess", b"dice", b"lum> "],
+            args.timeout,
+        )
+        print("[smoke] games command passed")
+        print(games_output.decode("latin1", errors="replace"))
+        search_output = expect_command_output(
+            sock,
+            b"search paint\n",
+            [b"Signal Finder", b"query: paint", b"Command hits:", b"paint", b"Signal count: 1", b"lum> "],
+            args.timeout,
+        )
+        print("[smoke] search command passed")
+        print(search_output.decode("latin1", errors="replace"))
+        slots_output = expect_command_output(
+            sock,
+            b"slots\n",
+            [b"Star Reels", b"Result:", b"lum> "],
+            args.timeout,
+        )
+        print("[smoke] slots command passed")
+        print(slots_output.decode("latin1", errors="replace"))
+        dice_output = expect_command_output(
+            sock,
+            b"dice\n",
+            [b"Twin Dice", b"Roll:", b"lum> "],
+            args.timeout,
+        )
+        print("[smoke] dice command passed")
+        print(dice_output.decode("latin1", errors="replace"))
+        sock.sendall(b"guess\n0\n")
+        guess_output = read_until(sock, [b"| Hidden Number", b"Guess cancelled.", b"lum> "], args.timeout)
+        print("[smoke] guess command passed")
+        print(guess_output.decode("latin1", errors="replace"))
         cat_output = expect_command_output(
             sock,
             b"cat readme.txt\n",
@@ -130,10 +174,30 @@ def main() -> int:
         )
         print("[smoke] cat command passed")
         print(cat_output.decode("latin1", errors="replace"))
+        sock.sendall(b"browser\nopen readme\n.exit\n")
+        browser_output = read_until(sock, [b"Pulse Browser", b"lum://home", b"Lum-OS cached README", b"Closing browser.", b"lum> "], args.timeout)
+        print("[smoke] browser command passed")
+        print(browser_output.decode("latin1", errors="replace"))
+        sock.sendall(b"paint\ndraw 1 1\n.exit\n")
+        paint_output = read_until(sock, [b"Pixel Loom", b"Point drawn.", b"Exiting paint.", b"lum> "], args.timeout)
+        print("[smoke] paint command passed")
+        print(paint_output.decode("latin1", errors="replace"))
+        sock.sendall(b"editor\nhello world\n.show\n.exit\n")
+        editor_output = read_until(sock, [b"| Inkboard", b"Line appended.", b"hello world", b"Exiting editor.", b"lum> "], args.timeout)
+        print("[smoke] editor command passed")
+        print(editor_output.decode("latin1", errors="replace"))
+        sock.sendall(b"docs\nopen notes\n.exit\n")
+        docs_output = read_until(sock, [b"| Archive Room", b"NOTES.TXT", b"hello world", b"Closing docs.", b"lum> "], args.timeout)
+        print("[smoke] docs command passed")
+        print(docs_output.decode("latin1", errors="replace"))
+        sock.sendall(b"calc\nadd 7 5\n.exit\n")
+        calc_output = read_until(sock, [b"| Number Forge", b"Result: 12", b"Closing calc.", b"lum> "], args.timeout)
+        print("[smoke] calc command passed")
+        print(calc_output.decode("latin1", errors="replace"))
         heap_output = expect_command_output(
             sock,
             b"heap\n",
-            [b"Heap start:", b"Heap used:", b"lum> "],
+            [b"Heap Ledger", b"Heap start:", b"Heap used:", b"lum> "],
             args.timeout,
         )
         print("[smoke] heap command passed")
@@ -166,7 +230,7 @@ def main() -> int:
         ticks_output = expect_command_output(
             sock,
             b"ticks\n",
-            [b"Timer ticks:", b"Approx uptime:", b"lum> "],
+            [b"Clock Ledger", b"Timer ticks:", b"Approx uptime:", b"lum> "],
             args.timeout,
         )
         print("[smoke] ticks command passed")
@@ -174,7 +238,7 @@ def main() -> int:
         uptime_output = expect_command_output(
             sock,
             b"uptime\n",
-            [b"Uptime exact:", b" s", b"lum> "],
+            [b"Uptime Ledger", b"Uptime exact:", b" s", b"lum> "],
             args.timeout,
         )
         print("[smoke] uptime command passed")
@@ -182,7 +246,7 @@ def main() -> int:
         mem_output = expect_command_output(
             sock,
             b"mem\n",
-            [b"Approx total memory:", b"lum> "],
+            [b"Memory Atlas", b"Approx total memory:", b"heap ledger snapshot:", b"lum> "],
             args.timeout,
         )
         print("[smoke] mem command passed")
@@ -190,7 +254,7 @@ def main() -> int:
         ls_output = expect_command_output(
             sock,
             b"ls\n",
-            [b"Root directory:", b"STAGE2.BIN", b"KERNEL.BIN", b"README.TXT", b"STATUS.TXT", b"lum> "],
+            [b"Root Ledger", b"STAGE2.BIN", b"KERNEL.BIN", b"README.TXT", b"STATUS.TXT", b"lum> "],
             args.timeout,
         )
         print("[smoke] ls command passed")
