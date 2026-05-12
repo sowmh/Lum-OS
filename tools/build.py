@@ -10,8 +10,14 @@ BUILD_DIR = REPO_ROOT / "build"
 STAGE1_SRC = REPO_ROOT / "src" / "bootloader" / "stage1" / "boot.asm"
 STAGE2_SRC = REPO_ROOT / "src" / "bootloader" / "stage2" / "stage2.asm"
 KERNEL_SRC = REPO_ROOT / "src" / "kernel" / "kernel.asm"
+KERNEL_C_DIR = REPO_ROOT / "src" / "kernel"
 IMAGE_SCRIPT = REPO_ROOT / "tools" / "build_image.py"
 SMOKE_TEST_SCRIPT = REPO_ROOT / "tools" / "smoke_test.py"
+
+C_SOURCES = [
+    KERNEL_C_DIR / "gfx.c",
+    KERNEL_C_DIR / "font.c",
+]
 def find_executable(env_var: str, names: list[str], fallbacks: list[Path]) -> str:
     override = os.environ.get(env_var)
     if override:
@@ -43,20 +49,36 @@ def qemu() -> str:
         ["qemu-system-i386"],
         [Path(r"C:\Program Files\qemu\qemu-system-i386.exe")],
     )
+
+def gcc() -> str:
+    return find_executable(
+        "GCC",
+        ["i686-w64-mingw32-gcc", "gcc"],
+        [Path(r"C:\Program Files\mingw-w64\i686-w64-mingw32\bin\gcc.exe"),
+         Path(r"C:\mingw64\bin\gcc.exe")],
+    )
+
+def ld() -> str:
+    return find_executable(
+        "LD",
+        ["i686-w64-mingw32-ld", "ld"],
+        [Path(r"C:\Program Files\mingw-w64\i686-w64-mingw32\bin\ld.exe"),
+         Path(r"C:\mingw64\bin\ld.exe")],
+    )
 def build_stage1() -> Path:
     ensure_build_dir()
     output = BUILD_DIR / "stage1.bin"
-    run_command([nasm(), "-f", "bin", str(STAGE1_SRC), "-o", str(output)])
+    run_command([nasm(), "-f", "bin", "-w-label-redef-late", str(STAGE1_SRC), "-o", str(output)])
     return output
 def build_stage2() -> Path:
     ensure_build_dir()
     output = BUILD_DIR / "stage2.bin"
-    run_command([nasm(), "-f", "bin", str(STAGE2_SRC), "-o", str(output)])
+    run_command([nasm(), "-f", "bin", "-w-label-redef-late", str(STAGE2_SRC), "-o", str(output)])
     return output
 def build_kernel() -> Path:
     ensure_build_dir()
     output = BUILD_DIR / "kernel.bin"
-    run_command([nasm(), "-f", "bin", str(KERNEL_SRC), "-o", str(output)])
+    run_command([nasm(), "-f", "bin", "-w-label-redef-late", str(KERNEL_SRC), "-o", str(output)])
     return output
 def build_image() -> Path:
     ensure_build_dir()

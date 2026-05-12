@@ -43,6 +43,17 @@ bits 16
 %define BOOTINFO_ROOTDIR_ADDR  16
 %define BOOTINFO_FILE_TABLE_ADDR 20
 %define BOOTINFO_FILE_COUNT    24
+%define BOOTINFO_FB_ADDR       26
+%define BOOTINFO_FB_WIDTH      30
+%define BOOTINFO_FB_HEIGHT     34
+%define BOOTINFO_FB_PITCH      38
+%define BOOTINFO_FB_BPP        42
+%define BOOTINFO_FB_RED_POS    43
+%define BOOTINFO_FB_GREEN_POS  44
+%define BOOTINFO_FB_BLUE_POS   45
+
+%define VBE_INFO_BLOCK_OFFSET  0x0800
+%define MODE_INFO_BLOCK_OFFSET 0x0A00
 
 start:
     cli
@@ -70,6 +81,8 @@ start:
 
     mov si, msg_kernel_loaded
     call puts
+
+    call vesa_init
 
     call enable_a20
     mov si, msg_entering_pm
@@ -125,6 +138,15 @@ write_boot_info:
     mov dword [es:di + BOOTINFO_ROOTDIR_ADDR], STAGE2_PHYSICAL_BASE + ROOT_DIR_BUFFER
     mov dword [es:di + BOOTINFO_FILE_TABLE_ADDR], FILE_CACHE_TABLE_PHYS
     mov dword [es:di + BOOTINFO_FILE_COUNT], 0
+
+    mov dword [es:di + BOOTINFO_FB_ADDR], 0
+    mov dword [es:di + BOOTINFO_FB_WIDTH], 0
+    mov dword [es:di + BOOTINFO_FB_HEIGHT], 0
+    mov dword [es:di + BOOTINFO_FB_PITCH], 0
+    mov byte [es:di + BOOTINFO_FB_BPP], 0
+    mov byte [es:di + BOOTINFO_FB_RED_POS], 0
+    mov byte [es:di + BOOTINFO_FB_GREEN_POS], 0
+    mov byte [es:di + BOOTINFO_FB_BLUE_POS], 0
 
     pop es
     pop di
@@ -569,6 +591,161 @@ sync_cached_file_count:
     pop ax
     ret
 
+vesa_init:
+    push ax
+    push bx
+    push cx
+    push dx
+    push di
+    push es
+    push si
+
+    mov ax, cs
+    mov es, ax
+
+    mov si, msg_vesa_detect
+    call puts
+
+    mov di, VBE_INFO_BLOCK_OFFSET
+    mov ax, 0x4F00
+    int 0x10
+    cmp ax, 0x004F
+    jne .vesa_fail
+
+    mov si, msg_vesa_found
+    call puts
+
+    call vesa_set_mode
+
+    jmp .vesa_done
+
+.vesa_fail:
+    mov si, msg_vesa_fail
+    call puts
+
+.vesa_done:
+    pop si
+    pop es
+    pop di
+    pop dx
+    pop cx
+    pop bx
+    pop ax
+    ret
+
+vesa_set_mode:
+    push ax
+    push bx
+    push cx
+    push dx
+    push di
+    push es
+    push si
+
+    mov ax, cs
+    mov es, ax
+
+    mov di, MODE_INFO_BLOCK_OFFSET
+    mov cx, 0x115
+    mov ax, 0x4F01
+    int 0x10
+    cmp ax, 0x004F
+    jne .mode_set_fail
+
+    mov si, msg_vesa_800_trying
+    call puts
+
+.mode_supported:
+    mov ax, cx
+    or ax, 0x4000
+    mov bx, ax
+    mov ax, 0x4F02
+    int 0x10
+    cmp ax, 0x004F
+    jne .mode_set_fail
+
+    mov si, msg_vesa_success
+    call puts
+
+    call vesa_store_info
+
+    jmp .vesa_set_done
+
+.mode_set_fail:
+    mov si, msg_vesa_mode_fail
+    call puts
+
+.vesa_set_done:
+    pop si
+    pop es
+    pop di
+    pop dx
+    pop cx
+    pop bx
+    pop ax
+    ret
+
+vesa_store_info:
+    push ax
+    push bx
+    push cx
+    push edx
+    push edi
+    push es
+    push si
+    push ds
+
+    mov ax, cs
+    mov es, ax
+
+    mov ax, BOOT_INFO_SEGMENT
+    mov ds, ax
+
+    mov di, MODE_INFO_BLOCK_OFFSET
+
+    mov eax, [es:di + 40]
+    mov [ds:BOOTINFO_FB_ADDR], eax
+
+    mov eax, [es:di + 12]
+    and eax, 0xFFFF
+    mov [ds:BOOTINFO_FB_WIDTH], eax
+
+    mov eax, [es:di + 14]
+    and eax, 0xFFFF
+    mov [ds:BOOTINFO_FB_HEIGHT], eax
+
+    mov eax, [es:di + 16]
+    and eax, 0xFFFF
+    mov [ds:BOOTINFO_FB_PITCH], eax
+
+    mov al, [es:di + 25]
+    mov [ds:BOOTINFO_FB_BPP], al
+
+    mov al, [es:di + 27]
+    mov [ds:BOOTINFO_FB_RED_POS], al
+
+    mov al, [es:di + 29]
+    mov [ds:BOOTINFO_FB_GREEN_POS], al
+
+    mov al, [es:di + 31]
+    mov [ds:BOOTINFO_FB_BLUE_POS], al
+
+    mov ax, cs
+    mov ds, ax
+
+    mov si, msg_vesa_info
+    call puts
+
+    pop ds
+    pop si
+    pop es
+    pop edi
+    pop edx
+    pop cx
+    pop bx
+    pop ax
+    ret
+
 fat12_next_cluster:
     push bx
     push dx
@@ -781,5 +958,13 @@ stage2_file_name:     db 'STAGE2  BIN'
 msg_stage2_banner:    db 'Lum-OS stage2: serial online', 10, 0
 msg_loading_kernel:   db 'Loading kernel.bin from FAT12...', 10, 0
 msg_kernel_loaded:    db 'Kernel loaded successfully.', 10, 0
+msg_vesa_detect:      db 'Detecting VESA VBE 2.0...', 10, 0
+msg_vesa_found:       db 'VESA VBE found. Querying modes...', 10, 0
+msg_vesa_1024_fail:   db 'Mode 1024x768 not available, trying 800x600...', 10, 0
+msg_vesa_800_trying:  db 'Setting 800x600 32bpp mode...', 10, 0
+msg_vesa_success:     db 'Graphics mode set successfully.', 10, 0
+msg_vesa_fail:        db 'VBE not available. Continuing with text mode.', 10, 0
+msg_vesa_mode_fail:   db 'Failed to set graphics mode. Continuing with text mode.', 10, 0
+msg_vesa_info:        db 'Framebuffer initialized.', 10, 0
 msg_entering_pm:      db 'Switching to 32-bit protected mode...', 10, 0
 msg_kernel_failed:    db 'Kernel load failed. System halted.', 10, 0

@@ -14,6 +14,14 @@ bits 32
 %define BOOTINFO_ROOTDIR_ADDR    16
 %define BOOTINFO_FILE_TABLE_ADDR 20
 %define BOOTINFO_FILE_COUNT      24
+%define BOOTINFO_FB_ADDR         26
+%define BOOTINFO_FB_WIDTH        30
+%define BOOTINFO_FB_HEIGHT       34
+%define BOOTINFO_FB_PITCH        38
+%define BOOTINFO_FB_BPP          42
+%define BOOTINFO_FB_RED_POS      43
+%define BOOTINFO_FB_GREEN_POS    44
+%define BOOTINFO_FB_BLUE_POS     45
 %define LINE_BUFFER_SIZE        128
 %define KBD_QUEUE_SIZE           64
 %define TIMER_HZ                100
@@ -29,6 +37,8 @@ bits 32
 %define KERNEL_STACK_GUARD  0x0010C000
 %define BOOTSTRAP_RESERVED_END (HEAP_START + HEAP_SIZE)
 %define FILE_CACHE_ENTRY_SIZE     24
+%define FB_VIRT_BASE        0x00800000
+%define FB_VIRT_DIR_IDX     2
 %define COLOR_BODY               0x70
 %define COLOR_PANEL              0x7F
 %define COLOR_PROMPT             0x71
@@ -52,15 +62,51 @@ start:
     call serial_init
     call init_irq
     call init_paging
+    call init_graphics
     call init_memory
-    call set_body_color
-    call clear_screen
-    call show_banner
-shell_loop:
-    call print_prompt
-    call read_line
-    call dispatch_command
-    jmp shell_loop
+    ; call set_body_color
+    ; call clear_screen
+    ; call show_banner
+desktop_loop:
+    call show_main_menu
+.menu_choice:
+    call read_menu_choice
+    cmp al, '1'
+    je .launch_browser
+    cmp al, '2'
+    je .launch_editor
+    cmp al, '3'
+    je .launch_paint
+    cmp al, '4'
+    je .launch_games
+    cmp al, '5'
+    je .launch_about
+    cmp al, '6'
+    je .launch_help
+    cmp al, '7'
+    je .reboot
+    jmp .menu_choice
+.launch_browser:
+    call run_browser_app
+    jmp desktop_loop
+.launch_editor:
+    call run_editor_app
+    jmp desktop_loop
+.launch_paint:
+    call run_paint_app
+    jmp desktop_loop
+.launch_games:
+    call print_games_screen
+    jmp desktop_loop
+.launch_about:
+    call print_about_screen
+    jmp desktop_loop
+.launch_help:
+    call print_help_screen
+    jmp desktop_loop
+.reboot:
+    call reboot_system
+    jmp .reboot
 show_banner:
     call prepare_window_surface
     mov byte [text_color], COLOR_PANEL
@@ -86,6 +132,59 @@ show_banner:
     mov esi, shell_ready_hint
     call console_write
     call set_body_color
+    ret
+show_main_menu:
+    call prepare_window_surface
+    mov byte [text_color], COLOR_PANEL
+    mov esi, desktop_top
+    call console_write
+    mov esi, desktop_toolbar
+    call console_write
+    mov byte [text_color], COLOR_SUBTLE
+    mov esi, desktop_empty
+    call console_write
+    mov byte [text_color], COLOR_PANEL
+    mov esi, desktop_window_top
+    call console_write
+    mov esi, desktop_window_title
+    call console_write
+    mov esi, desktop_window_subtitle
+    call console_write
+    mov esi, desktop_window_hint
+    call console_write
+    mov esi, desktop_window_blank
+    call console_write
+    mov esi, desktop_window_prompt
+    call console_write
+    mov esi, desktop_window_blank
+    call console_write
+    mov esi, desktop_window_bottom
+    call console_write
+    mov byte [text_color], COLOR_SUBTLE
+    mov esi, desktop_empty
+    call console_write
+    mov esi, desktop_footer
+    call console_write
+    mov byte [text_color], COLOR_SECTION
+    mov esi, launcher_prompt
+    call console_write
+    mov byte [text_color], COLOR_SUBTLE
+    mov esi, desktop_status
+    call console_write
+    call set_body_color
+    ret
+read_menu_choice:
+    call read_input_char
+    cmp al, '1'
+    jb .invalid
+    cmp al, '7'
+    ja .invalid
+    ret
+.invalid:
+    mov byte [text_color], COLOR_ERROR
+    mov esi, launcher_invalid_choice
+    call console_write
+    call read_menu_choice
     ret
 prepare_window_surface:
     call set_body_color
@@ -196,6 +295,254 @@ init_paging:
     call init_frame_bitmap
     call setup_identity_paging
     ret
+
+init_graphics:
+    push eax
+    push ebx
+    push ecx
+    push edx
+    push edi
+    push esi
+    
+    mov edi, BOOT_INFO_ADDR
+    mov eax, [edi + BOOTINFO_FB_ADDR]
+    test eax, eax
+    jz .no_graphics
+    
+    mov ebx, [edi + BOOTINFO_FB_WIDTH]
+    mov ecx, [edi + BOOTINFO_FB_HEIGHT]
+    mov edx, [edi + BOOTINFO_FB_PITCH]
+    
+    test ebx, ebx
+    jz .no_graphics
+    test ecx, ecx
+    jz .no_graphics
+    
+    ; Store framebuffer info in global variables
+    mov [fb_addr], eax
+    mov [fb_width], ebx
+    mov [fb_height], ecx
+    mov [fb_pitch], edx
+    call map_framebuffer
+    
+    ; Clear screen with desktop background color (0xFF161B22)
+    push 0xFF161B22
+    call gfx_clear
+    add esp, 4
+    
+    mov esi, msg_graphics_init
+    call console_write
+    
+    jmp .graphics_done
+
+.no_graphics:
+    mov esi, msg_no_graphics
+    call console_write
+
+.graphics_done:
+    pop esi
+    pop edi
+    pop edx
+    pop ecx
+    pop ebx
+    pop eax
+    ret
+
+map_framebuffer:
+    push ebx
+    push ecx
+    push edx
+    push esi
+    push edi
+
+    mov esi, [fb_addr]
+    test esi, esi
+    jz .done
+
+    mov eax, [fb_pitch]
+    mov ebx, [fb_height]
+    imul eax, ebx
+    add eax, 0xFFF
+    shr eax, 12
+    xor ecx, ecx
+
+.map_loop:
+    cmp ecx, eax
+    je .done
+    mov edx, [fb_addr]
+    and edx, 0xFFFFF000
+    mov edi, ecx
+    shl edi, 12
+    add edx, edi
+    mov edi, second_page_table
+    mov [edi + ecx*4], edx
+    or dword [edi + ecx*4], 0x003
+    inc ecx
+    jmp .map_loop
+
+.done:
+    mov dword [fb_addr], FB_VIRT_BASE
+    pop edi
+    pop esi
+    pop edx
+    pop ecx
+    pop ebx
+    ret
+
+; Graphics functions
+gfx_clear:
+    push ebp
+    mov ebp, esp
+    push eax
+    push ebx
+    push ecx
+    push edx
+    push edi
+    
+    mov eax, [fb_addr]
+    test eax, eax
+    jz .done
+    
+    mov edi, eax                    ; framebuffer address
+    mov eax, [ebp + 8]              ; color parameter
+    mov ebx, [fb_width]
+    mov ecx, [fb_height]
+    imul ebx, ecx                   ; total pixels = width * height
+    
+.loop:
+    test ebx, ebx
+    jz .done
+    mov [edi], eax                  ; write 32-bit color
+    add edi, 4                      ; next pixel (32-bit)
+    dec ebx
+    jmp .loop
+    
+.done:
+    pop edi
+    pop edx
+    pop ecx
+    pop ebx
+    pop eax
+    mov esp, ebp
+    pop ebp
+    ret
+
+gfx_put_pixel:
+    push ebp
+    mov ebp, esp
+    push eax
+    push ebx
+    push ecx
+    push edx
+    push edi
+    
+    mov eax, [fb_addr]
+    test eax, eax
+    jz .done
+    
+    mov ebx, [ebp + 8]              ; x
+    mov ecx, [ebp + 12]             ; y
+    mov edx, [ebp + 16]             ; color
+    
+    ; Check bounds
+    cmp ebx, [fb_width]
+    jae .done
+    cmp ecx, [fb_height]
+    jae .done
+    
+    ; Calculate pixel address: fb_addr + (y * pitch) + (x * 4)
+    mov edi, [fb_pitch]
+    imul edi, ecx                   ; y * pitch
+    lea edi, [eax + edi]            ; fb_addr + (y * pitch)
+    lea edi, [edi + ebx * 4]        ; + (x * 4)
+    
+    mov [edi], edx                  ; write pixel
+    
+.done:
+    pop edi
+    pop edx
+    pop ecx
+    pop ebx
+    pop eax
+    mov esp, ebp
+    pop ebp
+    ret
+
+gfx_fill_rect:
+    push ebp
+    mov ebp, esp
+    push eax
+    push ebx
+    push ecx
+    push edx
+    push esi
+    push edi
+    
+    mov eax, [fb_addr]
+    test eax, eax
+    jz .done
+    
+    mov ebx, [ebp + 8]              ; x
+    mov ecx, [ebp + 12]             ; y
+    mov edx, [ebp + 16]             ; width
+    mov esi, [ebp + 20]             ; height
+    mov edi, [ebp + 24]             ; color
+    
+    ; Basic bounds check
+    test edx, edx
+    jz .done
+    test esi, esi
+    jz .done
+    
+    cmp ebx, [fb_width]
+    jae .done
+    cmp ecx, [fb_height]
+    jae .done
+    
+    ; For simplicity, assume rectangle fits (no clipping)
+    push esi                        ; save height
+    push edi                        ; save color
+    
+    ; Calculate starting address: fb_addr + (y * pitch) + (x * 4)
+    mov esi, [fb_pitch]
+    imul esi, ecx                   ; y * pitch
+    add esi, eax                    ; fb_addr + (y * pitch)
+    lea esi, [esi + ebx * 4]        ; + (x * 4)
+    
+    pop edi                         ; restore color
+    pop ecx                         ; restore height
+    
+.fill_y:
+    push ecx                        ; save remaining height
+    push esi                        ; save row start
+    push edx                        ; save width
+    
+    mov ecx, edx                    ; width counter
+    
+.fill_x:
+    mov [esi], edi                  ; write pixel
+    add esi, 4                      ; next pixel
+    dec ecx
+    jnz .fill_x
+    
+    pop edx                         ; restore width
+    pop esi                         ; restore row start
+    add esi, [fb_pitch]             ; next row
+    pop ecx                         ; restore height
+    dec ecx
+    jnz .fill_y
+    
+.done:
+    pop edi
+    pop esi
+    pop edx
+    pop ecx
+    pop ebx
+    pop eax
+    mov esp, ebp
+    pop ebp
+    ret
+
 init_frame_bitmap:
     push eax
     push ebx
@@ -258,6 +605,9 @@ setup_identity_paging:
     mov eax, first_page_table
     or eax, 0x003
     mov [page_directory + 0], eax
+    mov eax, second_page_table
+    or eax, 0x003
+    mov [page_directory + FB_VIRT_DIR_IDX * 4], eax
     mov eax, page_directory
     mov cr3, eax
     mov eax, cr0
@@ -3800,6 +4150,10 @@ last_alloc_size:   dd 0
 heap_alloc_count:  dd 0
 heap_free_count:   dd 0
 heap_high_water:   dd 0
+fb_addr:           dd 0
+fb_width:          dd 0
+fb_height:         dd 0
+fb_pitch:          dd 0
 frame_reserved_count: dd 0
 frame_dynamic_count: dd 0
 kbd_head:          db 0
@@ -3818,6 +4172,8 @@ banner_title:      db ' | Lum-OS Studio                                         
 banner_mid:        db ' | A calm text workspace for notes, archives, sketching, play |', 10, 0
 banner_bottom:     db ' .------------------------------------------------------------.', 10, 0
 boot_ok_message:   db '[ok] Boot path complete: FAT12 -> stage2 -> protected mode -> kernel', 10, 0
+msg_graphics_init: db '[ok] Graphics framebuffer detected and initialized', 10, 0
+msg_no_graphics:   db '[info] No graphics framebuffer available, using text mode', 10, 0
 shell_hint:        db 'Type help. Input works from the QEMU keyboard or the serial console.', 10, 10, 0
 exception_prefix:  db '[EXCEPTION] vector=', 0
 exception_error_prefix: db ' error=', 0
@@ -3862,6 +4218,27 @@ apps_docs_line:    db ' docs: README.TXT, STATUS.TXT, and live session notes', 1
 apps_visual_line:  db ' visual: paint opens Pixel Loom with a 40x16 ASCII canvas', 10, 0
 apps_fun_line:     db ' fun: games, guess, slots, dice', 10, 0
 apps_hint_line:    db 'Tip: write in inkboard, then open notes in archive or pulse.', 10, 0
+launcher_option1:  db '  1) Pulse browser', 10, 0
+launcher_option2:  db '  2) Inkboard editor', 10, 0
+launcher_option3:  db '  3) Pixel Loom paint', 10, 0
+launcher_option4:  db '  4) Arcade games', 10, 0
+launcher_option5:  db '  5) About system', 10, 0
+launcher_option6:  db '  6) Field guide', 10, 0
+launcher_option7:  db '  7) Reboot', 10, 0
+launcher_prompt:   db 'Press 1-7 to launch an app.', 10, 0
+launcher_invalid_choice: db 'Invalid option. Press 1-7.', 10, 0
+desktop_top:           db ' .------------------------------------------------------------------------------.', 10, 0
+desktop_toolbar:       db ' | Shell   Mem   Apps   Archivos   Calculadora   Paint   About               |', 10, 0
+desktop_empty:         db ' |                                                                            |', 10, 0
+desktop_window_top:    db ' |   .------------------------------------------------------------.             |', 10, 0
+desktop_window_title:  db ' |   | Lum-OS Shell - /root                                       |             |', 10, 0
+desktop_window_subtitle: db ' |   | v0.9 · x86 protected mode · FAT12                          |             |', 10, 0
+desktop_window_hint:   db ' |   | Type help for commands                                     |             |', 10, 0
+desktop_window_blank:  db ' |   |                                                            |             |', 10, 0
+desktop_window_prompt: db ' |   | root@lum:~$ escribir comando...                            |             |', 10, 0
+desktop_window_bottom: db " |   '------------------------------------------------------------'             |", 10, 0
+desktop_footer:        db ' |                                                                            |', 10, 0
+desktop_status:        db ' [Kernel activo] [IRQ teclado OK] [FAT12 montado] [Paging ✓] [A20 ✓]', 10, 0
 
 guess_top:         db ' .------------------------------------------------------------.', 10, 0
 guess_title:       db ' | Hidden Number                                               |', 10, 0
@@ -4187,4 +4564,6 @@ align 4096
 page_directory:    times 1024 dd 0
 align 4096
 first_page_table:  times 1024 dd 0
+align 4096
+second_page_table: times 1024 dd 0
 frame_bitmap:      times (FRAME_COUNT / 8) db 0
