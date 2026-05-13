@@ -333,6 +333,9 @@ init_graphics:
     mov esi, msg_graphics_init
     call console_write
     
+    mov esi, msg_graphics_done
+    call console_write
+    
     jmp .graphics_done
 
 .no_graphics:
@@ -4173,6 +4176,7 @@ banner_mid:        db ' | A calm text workspace for notes, archives, sketching, 
 banner_bottom:     db ' .------------------------------------------------------------.', 10, 0
 boot_ok_message:   db '[ok] Boot path complete: FAT12 -> stage2 -> protected mode -> kernel', 10, 0
 msg_graphics_init: db '[ok] Graphics framebuffer detected and initialized', 10, 0
+msg_graphics_done: db '[ok] Graphics primitives ready, framebuffer cleared', 10, 0
 msg_no_graphics:   db '[info] No graphics framebuffer available, using text mode', 10, 0
 shell_hint:        db 'Type help. Input works from the QEMU keyboard or the serial console.', 10, 10, 0
 exception_prefix:  db '[EXCEPTION] vector=', 0
