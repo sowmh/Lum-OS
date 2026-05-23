@@ -646,16 +646,16 @@ vesa_set_mode:
     mov es, ax
 
     mov di, MODE_INFO_BLOCK_OFFSET
-    mov cx, 0x115
+    mov ax, 0x118
+    mov cx, ax
     mov ax, 0x4F01
     int 0x10
     cmp ax, 0x004F
-    jne .mode_set_fail
+    jne .try_800
 
-    mov si, msg_vesa_800_trying
+    mov si, msg_vesa_success
     call puts
 
-.mode_supported:
     mov ax, cx
     or ax, 0x4000
     mov bx, ax
@@ -666,9 +666,29 @@ vesa_set_mode:
 
     mov si, msg_vesa_success
     call puts
-
     call vesa_store_info
+    jmp .vesa_set_done
 
+.try_800:
+    mov si, msg_vesa_1024_fail
+    call puts
+
+    mov ax, 0x115
+    mov cx, ax
+    mov si, msg_vesa_800_trying
+    call puts
+
+    mov ax, cx
+    or ax, 0x4000
+    mov bx, ax
+    mov ax, 0x4F02
+    int 0x10
+    cmp ax, 0x004F
+    jne .mode_set_fail
+
+    mov si, msg_vesa_success
+    call puts
+    call vesa_store_info
     jmp .vesa_set_done
 
 .mode_set_fail:
@@ -703,31 +723,31 @@ vesa_store_info:
 
     mov di, MODE_INFO_BLOCK_OFFSET
 
-    mov eax, [es:di + 40]
-    mov [ds:BOOTINFO_FB_ADDR], eax
-
-    mov eax, [es:di + 12]
-    and eax, 0xFFFF
+    xor eax, eax
+    mov ax, [es:di + 0x12]
     mov [ds:BOOTINFO_FB_WIDTH], eax
 
-    mov eax, [es:di + 14]
-    and eax, 0xFFFF
+    xor eax, eax
+    mov ax, [es:di + 0x14]
     mov [ds:BOOTINFO_FB_HEIGHT], eax
 
-    mov eax, [es:di + 16]
-    and eax, 0xFFFF
+    xor eax, eax
+    mov ax, [es:di + 0x10]
     mov [ds:BOOTINFO_FB_PITCH], eax
 
-    mov al, [es:di + 25]
+    mov eax, [es:di + 0x28]
+    mov [ds:BOOTINFO_FB_ADDR], eax
+
+    mov al, [es:di + 0x19]
     mov [ds:BOOTINFO_FB_BPP], al
 
-    mov al, [es:di + 27]
+    mov al, [es:di + 0x21]
     mov [ds:BOOTINFO_FB_RED_POS], al
 
-    mov al, [es:di + 29]
+    mov al, [es:di + 0x23]
     mov [ds:BOOTINFO_FB_GREEN_POS], al
 
-    mov al, [es:di + 31]
+    mov al, [es:di + 0x25]
     mov [ds:BOOTINFO_FB_BLUE_POS], al
 
     mov ax, cs

@@ -1,169 +1,62 @@
-// src/kernel/kernel.c
-// 32-bit Protected Mode Kernel
-
 #include <stdint.h>
 
-// VGA text mode buffer
-#define VGA_MEMORY 0xB8000
-#define VGA_WIDTH 80
-#define VGA_HEIGHT 25
+#include "boot_info.h"
+#include "font.h"
+#include "gfx.h"
+#include "kernel_api.h"
 
-// Colors
-#define COLOR_BLACK 0
-#define COLOR_BLUE 1
-#define COLOR_GREEN 2
-#define COLOR_CYAN 3
-#define COLOR_RED 4
-#define COLOR_MAGENTA 5
-#define COLOR_BROWN 6
-#define COLOR_LIGHT_GRAY 7
-#define COLOR_DARK_GRAY 8
-#define COLOR_LIGHT_BLUE 9
-#define COLOR_LIGHT_GREEN 10
-#define COLOR_LIGHT_CYAN 11
-#define COLOR_LIGHT_RED 12
-#define COLOR_LIGHT_MAGENTA 13
-#define COLOR_YELLOW 14
-#define COLOR_WHITE 15
-
-typedef struct {
-    uint8_t character;
-    uint8_t color;
-} __attribute__((packed)) vga_char;
-
-static vga_char* vga_buffer = (vga_char*)VGA_MEMORY;
-static uint32_t cursor_x = 0;
-static uint32_t cursor_y = 0;
-static uint8_t current_color = (COLOR_WHITE << 4) | COLOR_BLACK;
-
-void clear_screen() {
-    for (uint32_t y = 0; y < VGA_HEIGHT; y++) {
-        for (uint32_t x = 0; x < VGA_WIDTH; x++) {
-            uint32_t index = y * VGA_WIDTH + x;
-            vga_buffer[index].character = ' ';
-            vga_buffer[index].color = current_color;
-        }
+static void kernel_draw_boot_desktop(const volatile struct boot_info *bi) {
+    if (bi->fb_addr == 0 || bi->fb_width == 0 || bi->fb_height == 0 || bi->fb_bpp != 32) {
+        return;
     }
-    cursor_x = 0;
-    cursor_y = 0;
+
+    gfx_init(
+        bi->fb_addr,
+        bi->fb_width,
+        bi->fb_height,
+        bi->fb_pitch,
+        bi->fb_bpp,
+        bi->fb_red_pos,
+        bi->fb_green_pos,
+        bi->fb_blue_pos
+    );
+
+    font_init();
+    gfx_fill_gradient_v(0, 0, (int)gfx_get_width(), (int)gfx_get_height(), C_BG_DESKTOP, C_BG_SURFACE);
+
+    int screen_w = (int)gfx_get_width();
+    int screen_h = (int)gfx_get_height();
+    int win_x = 32;
+    int win_y = 96;
+    int win_w = screen_w - 64;
+    int win_h = screen_h - 192;
+
+    gfx_fill_rounded_rect(win_x, win_y, win_w, win_h, 12, C_BG_PANEL);
+    gfx_draw_rounded_rect(win_x, win_y, win_w, win_h, 12, 2, C_BORDER);
+    gfx_fill_rect(win_x + 4, win_y + 4, win_w - 8, 28, C_BG_PANEL);
+    font_draw_str_trans(win_x + 12, win_y + 8, "Lum-OS Terminal", C_TEXT_PRI);
+    gfx_fill_rect(0, screen_h - 40, screen_w, 40, C_BG_PANEL);
+    font_draw_str_trans(24, screen_h - 30, "[F1] Help  [F2] Shell  [F3] Exit", C_TEXT_SEC);
+    font_draw_str_trans(24, 54, "LUM-OS framebuffer online", C_ACCENT);
+    font_draw_str_trans(24, 74, "Terminal ready. Use keyboard input below.", C_TEXT_PRI);
 }
 
-void set_color(uint8_t fg, uint8_t bg) {
-    current_color = (bg << 4) | fg;
+void gui_console_putc(uint32_t ch) {
+    (void)ch;
 }
 
-void putchar(char c) {
-    if (c == '\n') {
-        cursor_x = 0;
-        cursor_y++;
-    } else {
-        uint32_t index = cursor_y * VGA_WIDTH + cursor_x;
-        vga_buffer[index].character = c;
-        vga_buffer[index].color = current_color;
-        cursor_x++;
-        
-        if (cursor_x >= VGA_WIDTH) {
-            cursor_x = 0;
-            cursor_y++;
-        }
-    }
-    
-    if (cursor_y >= VGA_HEIGHT) {
-        // Scroll screen
-        for (uint32_t y = 0; y < VGA_HEIGHT - 1; y++) {
-            for (uint32_t x = 0; x < VGA_WIDTH; x++) {
-                uint32_t dst = y * VGA_WIDTH + x;
-                uint32_t src = (y + 1) * VGA_WIDTH + x;
-                vga_buffer[dst] = vga_buffer[src];
-            }
-        }
-        
-        // Clear last line
-        for (uint32_t x = 0; x < VGA_WIDTH; x++) {
-            uint32_t index = (VGA_HEIGHT - 1) * VGA_WIDTH + x;
-            vga_buffer[index].character = ' ';
-            vga_buffer[index].color = current_color;
-        }
-        
-        cursor_y = VGA_HEIGHT - 1;
-    }
-}
+void kernel_main(void) {
+    volatile struct boot_info *bi = boot_info_get();
 
-void print(const char* str) {
-    while (*str) {
-        putchar(*str);
-        str++;
-    }
-}
-
-void print_hex(uint32_t num) {
-    char hex[] = "0123456789ABCDEF";
-    print("0x");
-    for (int i = 7; i >= 0; i--) {
-        putchar(hex[(num >> (i * 4)) & 0xF]);
-    }
-}
-
-// Kernel entry point
-void kernel_main() {
+    init_paging();
+    kernel_draw_boot_desktop(bi);
+    font_init();
     clear_screen();
-    
-    // Print banner with colors
-    set_color(COLOR_YELLOW, COLOR_BLUE);
-    print("================================================================================");
-    putchar('\n');
-    set_color(COLOR_WHITE, COLOR_BLUE);
-    print("                        LUM-OS KERNEL v0.1 (32-bit)                           ");
-    putchar('\n');
-    set_color(COLOR_YELLOW, COLOR_BLUE);
-    print("================================================================================");
-    putchar('\n');
-    putchar('\n');
-    
-    set_color(COLOR_LIGHT_GREEN, COLOR_BLACK);
-    print("[OK] Protected mode enabled\n");
-    print("[OK] Kernel loaded successfully\n");
-    print("[OK] VGA text mode initialized\n\n");
-    
-    set_color(COLOR_LIGHT_CYAN, COLOR_BLACK);
-    print("System Information:\n");
-    set_color(COLOR_WHITE, COLOR_BLACK);
-    print("  - Architecture: x86 (32-bit)\n");
-    print("  - Boot mode: Legacy BIOS\n");
-    print("  - Display: VGA Text Mode (80x25)\n\n");
-    
-    set_color(COLOR_LIGHT_MAGENTA, COLOR_BLACK);
-    print("Memory Layout:\n");
-    set_color(COLOR_WHITE, COLOR_BLACK);
-    print("  - Kernel base: ");
-    print_hex(0x10000);
-    putchar('\n');
-    print("  - VGA buffer:  ");
-    print_hex(VGA_MEMORY);
-    putchar('\n');
-    print("  - Stack:       ");
-    print_hex(0x400000);
-    putchar('\n');
-    putchar('\n');
-    
-    set_color(COLOR_YELLOW, COLOR_BLACK);
-    print("Welcome to Lum-OS!\n\n");
-    
-    set_color(COLOR_LIGHT_GRAY, COLOR_BLACK);
-    print("This is a minimal 32-bit operating system kernel.\n");
-    print("The bootloader has successfully:\n");
-    print("  1. Loaded from disk\n");
-    print("  2. Detected memory (E820)\n");
-    print("  3. Enabled A20 line\n");
-    print("  4. Set up GDT\n");
-    print("  5. Switched to protected mode\n");
-    print("  6. Jumped to kernel\n\n");
-    
-    set_color(COLOR_LIGHT_RED, COLOR_BLACK);
-    print("System halted. No further functionality implemented yet.\n");
-    
-    // Halt CPU
+    show_banner();
+
     while (1) {
-        __asm__ volatile("hlt");
+        print_prompt();
+        read_line();
+        dispatch_command();
     }
 }

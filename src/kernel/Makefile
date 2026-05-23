@@ -8,7 +8,7 @@ TARGET = $(BUILD_DIR)/kernel.bin
 
 # Source files
 ASM_SOURCES = entry.asm kernel.asm
-C_SOURCES = kernel.c gfx.c font.c
+C_SOURCES = $(wildcard *.c)
 
 # Object files
 ASM_OBJECTS = $(patsubst %.asm, $(BUILD_DIR)/kernel_%.o, $(ASM_SOURCES))

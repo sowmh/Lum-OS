@@ -1,9 +1,47 @@
-org 0x10000
 bits 32
+section .text
+
+global kernel_bootstrap
+global show_banner
+global print_prompt
+global read_line
+global read_input_char
+global dispatch_command
+global console_write
+global console_putc
+global console_backspace
+global clear_screen
+global set_body_color
+global map_framebuffer
+global init_paging
+global timer_ticks
+global heap_end
+global heap_used_bytes
+global heap_alloc_count
+global heap_free_count
+global heap_high_water
+global fb_addr
+global fb_width
+global fb_height
+global fb_pitch
+
 %define VGA_TEXT                0xB8000
 %define VGA_COLS                80
 %define VGA_ROWS                25
 %define VGA_ROW_BYTES           (VGA_COLS * 2)
+
+%define TERM_LEFT              32
+%define TERM_TOP               96
+%define TERM_COLS              80
+%define TERM_ROWS              25
+%define TERM_WIDTH            (TERM_COLS * 8)
+%define TERM_HEIGHT           (TERM_ROWS * 16)
+%define TERM_BG_COLOR         0xFF161B22
+%define TERM_TEXT_COLOR       0xFFE6EDF3
+%define TERM_PROMPT_COLOR     0xFF58A6FF
+%define TERM_INFO_COLOR       0xFF8B949E
+%define TERM_ERROR_COLOR      0xFFF85149
+
 %define COM1                    0x3F8
 %define BOOT_INFO_ADDR          0x00009000
 %define BOOTINFO_MAGIC          0x304D554C
@@ -54,19 +92,15 @@ bits 32
     mov ebx, %1
     call set_idt_gate
 %endmacro
-start:
+kernel_bootstrap:
     cli
-    mov esp, KERNEL_STACK_TOP
+    mov esp, 0x0009FC00
     mov byte [text_color], COLOR_BODY
-    call init_idt
     call serial_init
-    call init_irq
-    call init_paging
-    call init_graphics
-    call init_memory
-    ; call set_body_color
-    ; call clear_screen
-    ; call show_banner
+    mov al, 'K'
+    call serial_write_raw
+    ret
+
 desktop_loop:
     call show_main_menu
 .menu_choice:

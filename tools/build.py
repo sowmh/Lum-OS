@@ -11,13 +11,17 @@ STAGE1_SRC = REPO_ROOT / "src" / "bootloader" / "stage1" / "boot.asm"
 STAGE2_SRC = REPO_ROOT / "src" / "bootloader" / "stage2" / "stage2.asm"
 KERNEL_SRC = REPO_ROOT / "src" / "kernel" / "kernel.asm"
 KERNEL_C_DIR = REPO_ROOT / "src" / "kernel"
+KERNEL_ENTRY_SRC = KERNEL_C_DIR / "entry.asm"
+KERNEL_LINKER_SCRIPT = KERNEL_C_DIR / "linker.ld"
 IMAGE_SCRIPT = REPO_ROOT / "tools" / "build_image.py"
 SMOKE_TEST_SCRIPT = REPO_ROOT / "tools" / "smoke_test.py"
 
-C_SOURCES = [
-    KERNEL_C_DIR / "gfx.c",
-    KERNEL_C_DIR / "font.c",
+KERNEL_ASM_SOURCES = [
+    KERNEL_ENTRY_SRC,
+    KERNEL_SRC,
 ]
+
+
 def find_executable(env_var: str, names: list[str], fallbacks: list[Path]) -> str:
     override = os.environ.get(env_var)
     if override:
@@ -31,10 +35,10 @@ def find_executable(env_var: str, names: list[str], fallbacks: list[Path]) -> st
             return str(path)
     searched = ", ".join(names + [str(path) for path in fallbacks])
     raise FileNotFoundError(f"Unable to find {env_var}. Tried: {searched}")
-def run_command(args: list[str]) -> None:
+def run_command(args: list[str], env: dict[str, str] | None = None) -> None:
     printable = " ".join(f'"{arg}"' if " " in arg else arg for arg in args)
     print(f"[build] {printable}")
-    subprocess.run(args, cwd=REPO_ROOT, check=True)
+    subprocess.run(args, cwd=REPO_ROOT, check=True, env=env)
 def ensure_build_dir() -> None:
     BUILD_DIR.mkdir(parents=True, exist_ok=True)
 def nasm() -> str:
@@ -51,20 +55,46 @@ def qemu() -> str:
     )
 
 def gcc() -> str:
-    return find_executable(
-        "GCC",
-        ["i686-w64-mingw32-gcc", "gcc"],
-        [Path(r"C:\Program Files\mingw-w64\i686-w64-mingw32\bin\gcc.exe"),
-         Path(r"C:\mingw64\bin\gcc.exe")],
-    )
+    for path in [
+        Path(r"C:\msys64\mingw32\bin\gcc.exe"),
+        Path(r"C:\Program Files\mingw-w64\i686-w64-mingw32\bin\gcc.exe"),
+        Path(r"C:\mingw64\bin\gcc.exe"),
+    ]:
+        if path.exists():
+            return str(path)
+    return find_executable("GCC", ["i686-w64-mingw32-gcc", "gcc"], [])
 
 def ld() -> str:
-    return find_executable(
-        "LD",
-        ["i686-w64-mingw32-ld", "ld"],
-        [Path(r"C:\Program Files\mingw-w64\i686-w64-mingw32\bin\ld.exe"),
-         Path(r"C:\mingw64\bin\ld.exe")],
-    )
+    for path in [
+        Path(r"C:\msys64\mingw32\bin\ld.exe"),
+        Path(r"C:\Program Files\mingw-w64\i686-w64-mingw32\bin\ld.exe"),
+        Path(r"C:\mingw64\bin\ld.exe"),
+    ]:
+        if path.exists():
+            return str(path)
+    return find_executable("LD", ["i686-w64-mingw32-ld", "ld"], [])
+
+
+def objcopy() -> str:
+    for path in [
+        Path(r"C:\msys64\mingw32\bin\objcopy.exe"),
+        Path(r"C:\Program Files\mingw-w64\i686-w64-mingw32\bin\objcopy.exe"),
+        Path(r"C:\mingw64\bin\objcopy.exe"),
+    ]:
+        if path.exists():
+            return str(path)
+    return find_executable("OBJCOPY", ["i686-w64-mingw32-objcopy", "objcopy"], [])
+
+
+def tool_env(*tools: str) -> dict[str, str]:
+    env = os.environ.copy()
+    dirs = []
+    for tool in tools:
+        parent = str(Path(tool).resolve().parent)
+        if parent not in dirs:
+            dirs.append(parent)
+    env["PATH"] = os.pathsep.join(dirs + [env.get("PATH", "")])
+    return env
 def build_stage1() -> Path:
     ensure_build_dir()
     output = BUILD_DIR / "stage1.bin"
@@ -78,7 +108,54 @@ def build_stage2() -> Path:
 def build_kernel() -> Path:
     ensure_build_dir()
     output = BUILD_DIR / "kernel.bin"
-    run_command([nasm(), "-f", "bin", "-w-label-redef-late", str(KERNEL_SRC), "-o", str(output)])
+    pe_output = BUILD_DIR / "kernel.exe"
+    nasm_exe = nasm()
+    gcc_exe = gcc()
+    ld_exe = ld()
+    objcopy_exe = objcopy()
+
+    asm_objects: list[Path] = []
+    for source in KERNEL_ASM_SOURCES:
+        obj = BUILD_DIR / f"kernel_{source.stem}_asm.o"
+        run_command([nasm_exe, "-f", "win32", "-w-label-redef-late", str(source), "-o", str(obj)])
+        asm_objects.append(obj)
+
+    c_objects: list[Path] = []
+    compile_env = tool_env(gcc_exe, objcopy_exe, ld_exe)
+    for source in sorted(KERNEL_C_DIR.glob("*.c")):
+        coff_obj = BUILD_DIR / f"kernel_{source.stem}_c.o"
+        run_command(
+            [
+                gcc_exe,
+                "-m32",
+                "-fno-leading-underscore",
+                "-ffreestanding",
+                "-fno-pie",
+                "-fno-stack-protector",
+                "-fno-asynchronous-unwind-tables",
+                "-fno-unwind-tables",
+                "-nostdlib",
+                "-O2",
+                "-Wall",
+                "-Wextra",
+                "-I",
+                str(KERNEL_C_DIR),
+                "-c",
+                str(source),
+                "-o",
+                str(coff_obj),
+            ],
+            env=compile_env,
+        )
+        c_objects.append(coff_obj)
+
+    link_env = tool_env(ld_exe, objcopy_exe)
+    run_command(
+        [ld_exe, "-mi386pe", "--image-base", "0", "-T", str(KERNEL_LINKER_SCRIPT), "-o", str(pe_output)]
+        + [str(obj) for obj in asm_objects + c_objects],
+        env=link_env,
+    )
+    run_command([objcopy_exe, "-O", "binary", str(pe_output), str(output)], env=link_env)
     return output
 def build_image() -> Path:
     ensure_build_dir()

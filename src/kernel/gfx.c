@@ -1,21 +1,15 @@
 #include "gfx.h"
+#include "kernel_api.h"
 #include <stdint.h>
 
-#define FB_VIRT_BASE    0xFD000000UL
-#define PAGE_SIZE       4096
-#define PTE_PRESENT     0x001
-#define PTE_WRITE       0x002
-#define PTE_PCD         0x010
-#define PTE_PWT         0x008
-
-static volatile uint32_t *fb = NULL;
-static uint32_t fb_width = 0;
-static uint32_t fb_height = 0;
-static uint32_t fb_pitch = 0;  /* in bytes */
-static uint8_t  fb_bpp = 0;
-static uint8_t  fb_red_pos = 0;
-static uint8_t  fb_green_pos = 0;
-static uint8_t  fb_blue_pos = 0;
+static volatile uint32_t *fb = 0;
+static uint32_t gfx_fb_width = 0;
+static uint32_t gfx_fb_height = 0;
+static uint32_t gfx_fb_pitch = 0;  /* in bytes */
+static uint8_t  gfx_fb_bpp = 0;
+static uint8_t  gfx_fb_red_pos = 0;
+static uint8_t  gfx_fb_green_pos = 0;
+static uint8_t  gfx_fb_blue_pos = 0;
 
 /* Simple memory operations without stdlib */
 static void *memset_int(void *s, int c, unsigned long n) {
@@ -35,9 +29,6 @@ static void *memcpy_int(void *dst, const void *src, unsigned long n) {
     return dst;
 }
 
-/* External paging function (from kernel) */
-extern void map_pages(uint32_t virt, uint32_t phys, uint32_t size, uint32_t flags);
-
 void gfx_init(uint32_t phys_addr, uint32_t width, uint32_t height,
               uint32_t pitch, uint8_t bpp, uint8_t red_pos,
               uint8_t green_pos, uint8_t blue_pos) {
@@ -45,49 +36,52 @@ void gfx_init(uint32_t phys_addr, uint32_t width, uint32_t height,
         return;  /* Invalid parameters, fallback to text mode */
     }
 
+    gfx_fb_width = width;
+    gfx_fb_height = height;
+    gfx_fb_pitch = pitch;
+    gfx_fb_bpp = bpp;
+    gfx_fb_red_pos = red_pos;
+    gfx_fb_green_pos = green_pos;
+    gfx_fb_blue_pos = blue_pos;
+
+    /*
+     * The active kernel maps the linear framebuffer through the second page
+     * table and rewrites fb_addr to the virtual base once the mapping exists.
+     */
+    fb_addr = phys_addr;
     fb_width = width;
     fb_height = height;
     fb_pitch = pitch;
-    fb_bpp = bpp;
-    fb_red_pos = red_pos;
-    fb_green_pos = green_pos;
-    fb_blue_pos = blue_pos;
+    map_framebuffer();
 
-    /* Map framebuffer to virtual address 0xFD000000 */
-    uint32_t fb_size = pitch * height;
-    uint32_t fb_size_aligned = ((fb_size + PAGE_SIZE - 1) / PAGE_SIZE) * PAGE_SIZE;
-    
-    map_pages(FB_VIRT_BASE, phys_addr, fb_size_aligned,
-              PTE_PRESENT | PTE_WRITE | PTE_PCD | PTE_PWT);
-    
-    fb = (volatile uint32_t *)FB_VIRT_BASE;
+    fb = (volatile uint32_t *)(uintptr_t)fb_addr;
 }
 
 void gfx_put_pixel(int x, int y, Color c) {
-    if (fb == NULL) return;
-    if ((unsigned)x >= fb_width || (unsigned)y >= fb_height) return;
+    if (fb == 0) return;
+    if ((unsigned)x >= gfx_fb_width || (unsigned)y >= gfx_fb_height) return;
     
-    volatile uint32_t *pixel = fb + (y * (fb_pitch / 4)) + x;
+    volatile uint32_t *pixel = fb + (y * (gfx_fb_pitch / 4)) + x;
     *pixel = c;
 }
 
 void gfx_clear(Color c) {
-    if (fb == NULL) return;
+    if (fb == 0) return;
     
-    for (uint32_t y = 0; y < fb_height; y++) {
-        for (uint32_t x = 0; x < fb_width; x++) {
+    for (uint32_t y = 0; y < gfx_fb_height; y++) {
+        for (uint32_t x = 0; x < gfx_fb_width; x++) {
             gfx_put_pixel(x, y, c);
         }
     }
 }
 
 void gfx_fill_rect(int x, int y, int w, int h, Color c) {
-    if (fb == NULL) return;
+    if (fb == 0) return;
     
     int x_start = (x < 0) ? 0 : x;
     int y_start = (y < 0) ? 0 : y;
-    int x_end = (x + w > (int)fb_width) ? (int)fb_width : x + w;
-    int y_end = (y + h > (int)fb_height) ? (int)fb_height : y + h;
+    int x_end = (x + w > (int)gfx_fb_width) ? (int)gfx_fb_width : x + w;
+    int y_end = (y + h > (int)gfx_fb_height) ? (int)gfx_fb_height : y + h;
     
     for (int py = y_start; py < y_end; py++) {
         for (int px = x_start; px < x_end; px++) {
@@ -97,7 +91,7 @@ void gfx_fill_rect(int x, int y, int w, int h, Color c) {
 }
 
 void gfx_draw_rect(int x, int y, int w, int h, int thickness, Color c) {
-    if (fb == NULL) return;
+    if (fb == 0) return;
     
     /* Top and bottom edges */
     for (int i = 0; i < thickness; i++) {
@@ -113,7 +107,7 @@ void gfx_draw_rect(int x, int y, int w, int h, int thickness, Color c) {
 }
 
 void gfx_draw_line(int x0, int y0, int x1, int y1, Color c) {
-    if (fb == NULL) return;
+    if (fb == 0) return;
     
     /* Bresenham's line algorithm */
     int dx = (x1 > x0) ? (x1 - x0) : (x0 - x1);
@@ -143,7 +137,7 @@ void gfx_draw_line(int x0, int y0, int x1, int y1, Color c) {
 }
 
 void gfx_fill_circle(int cx, int cy, int r, Color c) {
-    if (fb == NULL) return;
+    if (fb == 0) return;
     
     /* Midpoint circle algorithm */
     int x = r;
@@ -168,7 +162,7 @@ void gfx_fill_circle(int cx, int cy, int r, Color c) {
 }
 
 void gfx_draw_circle(int cx, int cy, int r, Color c) {
-    if (fb == NULL) return;
+    if (fb == 0) return;
     
     /* Draw circle outline using Midpoint algorithm */
     int x = r;
@@ -196,7 +190,7 @@ void gfx_draw_circle(int cx, int cy, int r, Color c) {
 }
 
 void gfx_fill_gradient_v(int x, int y, int w, int h, Color c1, Color c2) {
-    if (fb == NULL || h == 0) return;
+    if (fb == 0 || h == 0) return;
     
     for (int py = 0; py < h; py++) {
         /* Linear interpolation between c1 and c2 */
@@ -220,7 +214,7 @@ void gfx_fill_gradient_v(int x, int y, int w, int h, Color c1, Color c2) {
 }
 
 void gfx_fill_rounded_rect(int x, int y, int w, int h, int r, Color c) {
-    if (fb == NULL) return;
+    if (fb == 0) return;
     
     /* Fill main rectangle */
     gfx_fill_rect(x + r, y, w - 2 * r, h, c);
@@ -245,7 +239,7 @@ void gfx_fill_rounded_rect(int x, int y, int w, int h, int r, Color c) {
 }
 
 void gfx_draw_rounded_rect(int x, int y, int w, int h, int r, int t, Color c) {
-    if (fb == NULL) return;
+    if (fb == 0) return;
     
     /* Draw outline of rounded rectangle */
     for (int i = 0; i < t; i++) {
@@ -255,7 +249,7 @@ void gfx_draw_rounded_rect(int x, int y, int w, int h, int r, int t, Color c) {
 }
 
 void gfx_blit_rect(int dst_x, int dst_y, int src_x, int src_y, int w, int h) {
-    if (fb == NULL) return;
+    if (fb == 0) return;
     
     for (int py = 0; py < h; py++) {
         for (int px = 0; px < w; px++) {
@@ -264,11 +258,11 @@ void gfx_blit_rect(int dst_x, int dst_y, int src_x, int src_y, int w, int h) {
             int dst_px = dst_x + px;
             int dst_py = dst_y + py;
             
-            if ((unsigned)src_px < fb_width && (unsigned)src_py < fb_height &&
-                (unsigned)dst_px < fb_width && (unsigned)dst_py < fb_height) {
+            if ((unsigned)src_px < gfx_fb_width && (unsigned)src_py < gfx_fb_height &&
+                (unsigned)dst_px < gfx_fb_width && (unsigned)dst_py < gfx_fb_height) {
                 
-                Color c = fb[(src_py * (fb_pitch / 4)) + src_px];
-                fb[(dst_py * (fb_pitch / 4)) + dst_px] = c;
+                Color c = fb[(src_py * (gfx_fb_pitch / 4)) + src_px];
+                fb[(dst_py * (gfx_fb_pitch / 4)) + dst_px] = c;
             }
         }
     }
@@ -292,23 +286,23 @@ Color gfx_blend(Color dst, Color src) {
 }
 
 void gfx_fill_rect_alpha(int x, int y, int w, int h, Color c) {
-    if (fb == NULL) return;
+    if (fb == 0) return;
     
     for (int py = y; py < y + h; py++) {
         for (int px = x; px < x + w; px++) {
-            if ((unsigned)px < fb_width && (unsigned)py < fb_height) {
-                Color dst = fb[(py * (fb_pitch / 4)) + px];
+            if ((unsigned)px < gfx_fb_width && (unsigned)py < gfx_fb_height) {
+                Color dst = fb[(py * (gfx_fb_pitch / 4)) + px];
                 Color blended = gfx_blend(dst, c);
-                fb[(py * (fb_pitch / 4)) + px] = blended;
+                fb[(py * (gfx_fb_pitch / 4)) + px] = blended;
             }
         }
     }
 }
 
 uint32_t gfx_get_width(void) {
-    return fb_width;
+    return gfx_fb_width;
 }
 
 uint32_t gfx_get_height(void) {
-    return fb_height;
+    return gfx_fb_height;
 }

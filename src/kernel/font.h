@@ -1,5 +1,5 @@
-#ifndef FONT_H
-#define FONT_H
+#ifndef LUM_FONT_H
+#define LUM_FONT_H
 
 #include "gfx.h"
 
@@ -14,4 +14,4 @@ void font_draw_str(int px, int py, const char *s, Color fg, Color bg);
 void font_draw_char_trans(int px, int py, char c, Color fg);
 void font_draw_str_trans(int px, int py, const char *s, Color fg);
 
-#endif /* FONT_H */
+#endif /* LUM_FONT_H */

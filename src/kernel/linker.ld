@@ -1,5 +1,3 @@
-/* Kernel linker script */
-OUTPUT_FORMAT(binary)
 ENTRY(_start)
 
 SECTIONS
@@ -9,21 +7,29 @@ SECTIONS
     .text : ALIGN(4096)
     {
         *(.text)
+        *(.text*)
     }
     
     .rodata : ALIGN(4096)
     {
         *(.rodata)
+        *(.rodata*)
+        *(.rdata)
+        *(.rdata*)
     }
     
     .data : ALIGN(4096)
     {
         *(.data)
+        *(.data*)
     }
     
+    __bss_start = .;
     .bss : ALIGN(4096)
     {
         *(COMMON)
         *(.bss)
+        *(.bss*)
     }
+    __bss_end = .;
 }
